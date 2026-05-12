@@ -1,50 +1,6 @@
 ```
-# Dependencies
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.py.class
-*.py.obj
-
-# Build and distribution artifacts
-build/
-dist/
-*.egg-info/
-.sdist/
-.wheel/
-
-# Virtual environments
-venv/
-.venv/
-env/
-.env/
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
-
-# Logs
-*.log
-
-# Coverage
-.coverage
-coverage/
-htmlcov/
-
-# Python cache
-.mypy_cache/
-.pytest_cache/
-__pycache__/
-*.py[cod]
-*$py.class
-*$py.o
-*$py.obj
-
-# System files
-.DS_Store
-Thumbs.db
 ```

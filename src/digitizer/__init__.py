@@ -28,7 +28,17 @@ from typing import Any, Sequence
 import cv2
 import matplotlib
 
-matplotlib.use("Agg")
+# Defer backend selection until argument parsing to support interactive mode
+_MATPLOTLIB_BACKEND_SET = False
+
+
+def _set_matplotlib_backend(backend: str) -> None:
+    """Set matplotlib backend before importing pyplot."""
+    global _MATPLOTLIB_BACKEND_SET
+    if not _MATPLOTLIB_BACKEND_SET:
+        matplotlib.use(backend)
+        _MATPLOTLIB_BACKEND_SET = True
+
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1080,6 +1090,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         images = discover_images(args.inputs)
         if not images:
             parser.error("No input images were found.")
+        
+        # Set matplotlib backend based on interactive mode
+        if args.interactive_axis_selection:
+            _set_matplotlib_backend("TkAgg")  # Interactive backend for GUI
+        else:
+            _set_matplotlib_backend("Agg")  # Non-interactive backend
+        
         x_range = parse_range(args.x_range)
         y_range = parse_range(args.y_range)
         x_reference = parse_reference_pair(args.x_reference, "x")
