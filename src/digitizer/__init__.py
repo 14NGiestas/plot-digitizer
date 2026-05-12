@@ -69,6 +69,7 @@ MIN_CURVES_PER_PLOT = 1
 MAX_CURVES_PER_PLOT = 3
 VALIDATION_THRESHOLD = 0.05
 MAX_REPLOT_POINTS = 600
+MAX_REPLOT_LEGEND_DATASETS = 10
 SINE_AMPLITUDE_RANGE = (0.5, 1.8)
 SINE_FREQUENCY_RANGE = (0.6, 2.4)
 SINE_OFFSET_RANGE = (-0.75, 0.75)
@@ -734,7 +735,7 @@ def create_replot(points: pd.DataFrame, calibration: AxisCalibration, image_name
     else:
         axis.set_ylim(calibration.y_min, calibration.y_max)
     axis.grid(True, linestyle=":", alpha=0.35)
-    if 0 < plotted_columns <= 10:
+    if 0 < plotted_columns <= MAX_REPLOT_LEGEND_DATASETS:
         axis.legend()
     figure.tight_layout()
     figure.savefig(output_path, dpi=DEFAULT_DPI)
@@ -1022,6 +1023,7 @@ def run_training(dataset_dir: Path, output_dir: Path, epochs: int, imgsz: int, w
 
 
 def _interp_curve(points: pd.DataFrame, reference_x: np.ndarray) -> np.ndarray:
+    """Linearly interpolate one curve onto a shared x-grid for validation/export."""
     if len(points) < 2:
         raise ValueError("At least two points are required for interpolation.")
     unique = points.drop_duplicates(subset="x_real").sort_values("x_real")
