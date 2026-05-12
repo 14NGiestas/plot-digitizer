@@ -31,6 +31,8 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 output_dir=output_dir,
                 x_range=None,
                 y_range=None,
+                x_reference=None,
+                y_reference=None,
                 x_scale="linear",
                 y_scale="linear",
                 invert_y=False,
@@ -101,6 +103,31 @@ class DigitizerWorkflowTests(unittest.TestCase):
             assigned_predictions = [row["predicted_dataset_id"] for row in summary["per_curve"]]
             self.assertEqual(len(set(assigned_predictions)), len(assigned_predictions))
             self.assertFalse(summary["passed_under_5_percent"])
+
+    def test_parse_reference_pair_parses_expected_format(self) -> None:
+        parsed = digitizer.parse_reference_pair("20:0,120:10", "x")
+        self.assertEqual(parsed, ((20.0, 0.0), (120.0, 10.0)))
+
+    def test_calibrate_axes_uses_reference_points_for_non_extreme_axis_points(self) -> None:
+        image_path = Path("/tmp/nonexistent.png")
+        plot_box = digitizer.PlotBox(left=10, top=10, right=110, bottom=210)
+        calibration, metadata = digitizer.calibrate_axes(
+            image_path=image_path,
+            plot_box=plot_box,
+            x_range=None,
+            y_range=None,
+            x_reference=((30.0, 2.0), (80.0, 7.0)),
+            y_reference=((170.0, 20.0), (70.0, 70.0)),
+            x_scale="linear",
+            y_scale="linear",
+            invert_y=False,
+        )
+        self.assertAlmostEqual(calibration.x_min, 0.0, places=6)
+        self.assertAlmostEqual(calibration.x_max, 10.0, places=6)
+        self.assertAlmostEqual(calibration.y_min, 0.0, places=6)
+        self.assertAlmostEqual(calibration.y_max, 100.0, places=6)
+        self.assertEqual(metadata["axis_detection"]["x_range_source"], "reference")
+        self.assertEqual(metadata["axis_detection"]["y_range_source"], "reference")
 
 
 if __name__ == "__main__":
