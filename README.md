@@ -5,9 +5,9 @@ Automatic AI-assisted plot digitizer runnable with `uv`.
 ## Quick start
 
 ```bash
-uv run /home/runner/work/plot-digitizer/plot-digitizer/digitizer.py generate --output-dir synthetic-data --count 8
-uv run /home/runner/work/plot-digitizer/plot-digitizer/digitizer.py digitize synthetic-data/images --output-dir digitized --overlay
-uv run /home/runner/work/plot-digitizer/plot-digitizer/digitizer.py validate \
+uv run ./digitizer.py generate --output-dir synthetic-data --count 8
+uv run ./digitizer.py digitize synthetic-data/images --output-dir digitized --overlay
+uv run ./digitizer.py validate \
   --prediction-csv digitized/plot_0000.digitized.csv \
   --truth-csv synthetic-data/ground_truth/plot_0000.csv
 ```

@@ -602,7 +602,7 @@ def _random_curve(x_values: np.ndarray, rng: np.random.Generator) -> tuple[np.nd
         y_values = amplitude * np.exp(-decay * x_values) * np.cos(frequency * x_values)
     else:
         a, b, c = rng.uniform(-0.05, 0.05), rng.uniform(-0.4, 0.4), rng.uniform(-0.8, 0.8)
-        y_values = a * x_values**2 + b * x_values + c
+        y_values = a * (x_values * x_values) + b * x_values + c
     noise = rng.normal(0.0, rng.uniform(0.01, 0.05), size=x_values.shape)
     return y_values + noise, str(curve_type)
 
@@ -784,6 +784,11 @@ def validate_digitization(prediction_csv: Path, truth_csv: Path, output_json: Pa
     if not predicted_groups or not truth_groups:
         raise ValueError("Validation requires at least one predicted and one truth dataset.")
 
+    truth_ranges = {
+        dataset_id: max(1e-6, float(np.ptp(group["y_real"])))
+        for dataset_id, group in truth_groups
+    }
+
     for truth_id, truth_frame in truth_groups:
         reference_x = truth_frame["x_real"].to_numpy()
         truth_y = truth_frame["y_real"].to_numpy()
@@ -805,22 +810,12 @@ def validate_digitization(prediction_csv: Path, truth_csv: Path, output_json: Pa
     summary = {
         "mean_absolute_error": float(np.mean(total_error)),
         "mean_absolute_percentage_error_proxy": float(
-            np.mean(
-                [
-                    row["mae"] / max(1e-6, float(np.ptp(truth[truth["dataset_id"] == row["truth_dataset_id"]]["y_real"])))
-                    for row in metrics
-                ]
-            )
+            np.mean([row["mae"] / truth_ranges[row["truth_dataset_id"]] for row in metrics])
             * 100.0
         ),
         "per_curve": metrics,
         "passed_under_5_percent": bool(
-            np.mean(
-                [
-                    row["mae"] / max(1e-6, float(np.ptp(truth[truth["dataset_id"] == row["truth_dataset_id"]]["y_real"])))
-                    for row in metrics
-                ]
-            )
+            np.mean([row["mae"] / truth_ranges[row["truth_dataset_id"]] for row in metrics])
             < 0.05
         ),
     }
