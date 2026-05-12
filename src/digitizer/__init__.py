@@ -256,10 +256,12 @@ def interactive_reference_selection(image_path: Path) -> tuple[tuple[tuple[float
     y_axis_points: list[tuple[float, float]] = []
     for index, (x_coord, y_coord) in enumerate(selected_points):
         if index < 2:
-            real_value = float(input(f"Enter real X value for point {index + 1} at pixel x={x_coord:.1f}: ").strip())
+            x_point_index = index + 1
+            real_value = float(input(f"Enter real X value for X point {x_point_index} at pixel x={x_coord:.1f}: ").strip())
             x_axis_points.append((float(x_coord), real_value))
         else:
-            real_value = float(input(f"Enter real Y value for point {index - 1} at pixel y={y_coord:.1f}: ").strip())
+            y_point_index = index - 1
+            real_value = float(input(f"Enter real Y value for Y point {y_point_index} at pixel y={y_coord:.1f}: ").strip())
             y_axis_points.append((float(y_coord), real_value))
     if np.isclose(x_axis_points[0][0], x_axis_points[1][0]) or np.isclose(y_axis_points[0][0], y_axis_points[1][0]):
         raise RuntimeError("Interactive calibration points must use different pixel positions on each axis.")
@@ -1081,10 +1083,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         y_range = parse_range(args.y_range)
         x_reference = parse_reference_pair(args.x_reference, "x")
         y_reference = parse_reference_pair(args.y_reference, "y")
+        if args.interactive_axis_selection and (x_reference is not None or y_reference is not None):
+            parser.error("Do not combine --interactive-axis-selection with --x-reference/--y-reference.")
         if args.interactive_axis_selection and images:
-            interactive_x_reference, interactive_y_reference = interactive_reference_selection(images[0])
-            x_reference = x_reference or interactive_x_reference
-            y_reference = y_reference or interactive_y_reference
+            x_reference, y_reference = interactive_reference_selection(images[0])
         results = []
         for image_path in images:
             result = digitize_image(
