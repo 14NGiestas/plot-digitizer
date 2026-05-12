@@ -34,9 +34,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
+from scipy.optimize import linear_sum_assignment
 from scipy.signal import savgol_filter
 from skimage import measure, morphology
-from sklearn.cluster import DBSCAN, KMeans
+from sklearn.cluster import DBSCAN, MiniBatchKMeans
 
 LOGGER = logging.getLogger("plot_digitizer")
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
@@ -51,6 +52,9 @@ DARK_PIXEL_PERCENTILE = 82
 BASE_CV_CONFIDENCE = 0.45
 MAX_CV_CONFIDENCE = 0.99
 MAX_POLYGON_POINTS = 200
+MAX_COLOR_CLUSTERS = 4
+MAX_CLUSTER_SAMPLE_SIZE = 2000
+MINIBATCH_KMEANS_BATCH_SIZE = 1024
 MIN_CURVES_PER_PLOT = 1
 MAX_CURVES_PER_PLOT = 3
 VALIDATION_THRESHOLD = 0.05
@@ -380,14 +384,20 @@ def _cluster_by_color(crop: np.ndarray, foreground: np.ndarray) -> list[np.ndarr
     if len(pixels) < 100:
         return []
     filtered = pixels.astype(np.float32)
-    sample_count = min(len(filtered), 500)
+    sample_count = min(len(filtered), MAX_CLUSTER_SAMPLE_SIZE)
     sample_indices = np.linspace(0, len(filtered) - 1, sample_count).astype(int)
     sample = filtered[sample_indices]
-    cluster_count = int(min(4, max(1, len(np.unique(sample, axis=0)))))
+    cluster_count = int(min(MAX_COLOR_CLUSTERS, max(1, len(np.unique(sample, axis=0)))))
     if cluster_count <= 1:
         return []
-    model = KMeans(n_clusters=cluster_count, n_init=5, random_state=42)
-    labels = model.fit_predict(filtered)
+    model = MiniBatchKMeans(
+        n_clusters=cluster_count,
+        n_init=5,
+        random_state=42,
+        batch_size=MINIBATCH_KMEANS_BATCH_SIZE,
+    )
+    model.fit(sample)
+    labels = model.predict(filtered)
     masks: list[np.ndarray] = []
     for cluster_id in range(cluster_count):
         cluster_mask = np.zeros(foreground.shape, dtype=bool)
@@ -594,7 +604,10 @@ def digitize_image(
         "segmentation": {
             "dataset_count": int(converted["dataset_id"].nunique()),
             "points": int(len(converted)),
-            "method_counts": pd.Series([segmentation.method for segmentation in segmentations]).value_counts().to_dict(),
+            "method_counts": {
+                str(method): int(count)
+                for method, count in pd.Series([segmentation.method for segmentation in segmentations]).value_counts().items()
+            },
             "confidence_stats": {
                 "min": float(converted["confidence"].min()),
                 "max": float(converted["confidence"].max()),
@@ -642,7 +655,8 @@ def _random_curve(x_values: np.ndarray, rng: np.random.Generator) -> tuple[np.nd
 
 
 def _render_curve_mask(fig_size: tuple[float, float], dpi: int, x_values: np.ndarray, y_values: np.ndarray, x_range: tuple[float, float], y_range: tuple[float, float], style: dict[str, Any]) -> np.ndarray:
-    fig, ax = plt.subplots(figsize=fig_size, dpi=dpi)
+    fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
+    ax.set_facecolor("black")
     ax.set_xlim(*x_range)
     ax.set_ylim(*y_range)
     ax.plot(x_values, y_values, color="white", linewidth=style["linewidth"], linestyle=style["linestyle"])
@@ -650,7 +664,7 @@ def _render_curve_mask(fig_size: tuple[float, float], dpi: int, x_values: np.nda
     fig.canvas.draw()
     buffer = np.asarray(fig.canvas.buffer_rgba())
     plt.close(fig)
-    return buffer[:, :, 0] > 150
+    return np.max(buffer[:, :, :3], axis=2) > 200
 
 
 def _mask_to_yolo_polygon(mask: np.ndarray) -> list[float]:
@@ -810,8 +824,6 @@ def validate_digitization(prediction_csv: Path, truth_csv: Path, output_json: Pa
     """Compare digitized results against ground truth curves."""
     predicted = pd.read_csv(prediction_csv)
     truth = pd.read_csv(truth_csv)
-    metrics: list[dict[str, Any]] = []
-    total_error = []
     predicted_groups = list(predicted.groupby("dataset_id"))
     truth_groups = list(truth.groupby("dataset_id"))
 
@@ -823,24 +835,35 @@ def validate_digitization(prediction_csv: Path, truth_csv: Path, output_json: Pa
         for dataset_id, group in truth_groups
     }
 
-    for truth_id, truth_frame in truth_groups:
+    truth_ids = [dataset_id for dataset_id, _ in truth_groups]
+    predicted_ids = [dataset_id for dataset_id, _ in predicted_groups]
+    column_count = max(len(truth_groups), len(predicted_groups))
+    cost_matrix = np.full((len(truth_groups), column_count), np.inf, dtype=float)
+
+    for truth_index, (truth_id, truth_frame) in enumerate(truth_groups):
         reference_x = truth_frame["x_real"].to_numpy()
         truth_y = truth_frame["y_real"].to_numpy()
-        best: dict[str, Any] | None = None
-        for predicted_id, predicted_frame in predicted_groups:
+        for predicted_index, (_, predicted_frame) in enumerate(predicted_groups):
             aligned = _interp_curve(predicted_frame, reference_x)
-            mae = float(np.mean(np.abs(aligned - truth_y)))
-            score = {
+            cost_matrix[truth_index, predicted_index] = float(np.mean(np.abs(aligned - truth_y)))
+        for dummy_index in range(len(predicted_groups), column_count):
+            cost_matrix[truth_index, dummy_index] = truth_ranges[truth_id]
+
+    truth_assignment, predicted_assignment = linear_sum_assignment(cost_matrix)
+    metrics: list[dict[str, Any]] = []
+    total_error: list[float] = []
+    for truth_index, assigned_index in zip(truth_assignment.tolist(), predicted_assignment.tolist(), strict=True):
+        truth_id = truth_ids[truth_index]
+        predicted_id = predicted_ids[assigned_index] if assigned_index < len(predicted_ids) else None
+        mae = float(cost_matrix[truth_index, assigned_index])
+        metrics.append(
+            {
                 "truth_dataset_id": truth_id,
                 "predicted_dataset_id": predicted_id,
                 "mae": mae,
             }
-            if best is None or score["mae"] < best["mae"]:
-                best = score
-        if best is None:
-            raise ValueError(f"Unable to align predicted curves to truth dataset {truth_id!r}.")
-        metrics.append(best)
-        total_error.append(best["mae"])
+        )
+        total_error.append(mae)
 
     summary = {
         "mean_absolute_error": float(np.mean(total_error)),
