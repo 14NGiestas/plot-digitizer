@@ -42,7 +42,9 @@ class DigitizerWorkflowTests(unittest.TestCase):
             )
 
             self.assertTrue(result.csv_path.exists())
+            self.assertTrue(result.replot_csv_path.exists())
             self.assertTrue(result.metadata_path.exists())
+            self.assertTrue(result.replot_path.exists())
             self.assertTrue(result.overlay_path and result.overlay_path.exists())
 
             summary = digitizer.validate_digitization(result.csv_path, truth_csv)
@@ -53,8 +55,16 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertIn("confidence", frame.columns)
             self.assertGreater(len(frame), 50)
 
+            replot_frame = pd.read_csv(result.replot_csv_path)
+            self.assertIn("x_real", replot_frame.columns)
+            self.assertGreaterEqual(len(replot_frame.columns), 2)
+            self.assertGreater(len(replot_frame), 10)
+
             metadata = json.loads(result.metadata_path.read_text())
             self.assertIn("segmentation", metadata)
+            self.assertIn("exports", metadata)
+            self.assertEqual(metadata["exports"]["replot_csv"], str(result.replot_csv_path))
+            self.assertEqual(metadata["exports"]["replot_image"], str(result.replot_path))
             method_counts_are_ints = all(isinstance(value, int) for value in metadata["segmentation"]["method_counts"].values())
             self.assertTrue(method_counts_are_ints)
 
@@ -72,6 +82,19 @@ class DigitizerWorkflowTests(unittest.TestCase):
         )
         self.assertGreater(mask.mean(), 0.001)
         self.assertLess(mask.mean(), 0.2)
+
+    def test_build_replot_frame_uses_log_grid_for_log_x_scale(self) -> None:
+        points = pd.DataFrame(
+            {
+                "dataset_id": ["dataset_0"] * 5,
+                "x_real": np.geomspace(1.0, 100.0, 5),
+                "y_real": np.linspace(0.0, 1.0, 5),
+            }
+        )
+
+        replot_frame = digitizer.build_replot_frame(points, x_scale="log", max_points=5)
+
+        np.testing.assert_allclose(replot_frame["x_real"].to_numpy(), np.geomspace(1.0, 100.0, 5))
 
     def test_validate_digitization_enforces_unique_curve_assignment(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

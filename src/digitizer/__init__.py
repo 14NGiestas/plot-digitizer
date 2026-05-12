@@ -68,6 +68,8 @@ MINIBATCH_KMEANS_BATCH_SIZE = 1024
 MIN_CURVES_PER_PLOT = 1
 MAX_CURVES_PER_PLOT = 3
 VALIDATION_THRESHOLD = 0.05
+MAX_REPLOT_POINTS = 600
+MAX_REPLOT_LEGEND_DATASETS = 10
 SINE_AMPLITUDE_RANGE = (0.5, 1.8)
 SINE_FREQUENCY_RANGE = (0.6, 2.4)
 SINE_OFFSET_RANGE = (-0.75, 0.75)
@@ -145,7 +147,9 @@ class DigitizeResult:
     """Final digitization payload for one image."""
 
     csv_path: Path
+    replot_csv_path: Path
     metadata_path: Path
+    replot_path: Path
     overlay_path: Path | None
     point_count: int
     dataset_count: int
@@ -678,6 +682,70 @@ def create_overlay(image: np.ndarray, points: pd.DataFrame, segmentations: Seque
     cv2.imwrite(str(output_path), overlay)
 
 
+def build_replot_frame(points: pd.DataFrame, x_scale: str = "linear", max_points: int = MAX_REPLOT_POINTS) -> pd.DataFrame:
+    """Convert tidy digitized points into a wide `x_real + dataset columns` frame.
+
+    `max_points` caps the shared interpolation grid density used for the export.
+    Values outside each dataset's observed x-range are left as `NaN`.
+    """
+    if points.empty:
+        return pd.DataFrame(columns=["x_real"])
+    dataset_frames: list[tuple[str, pd.DataFrame]] = []
+    longest_dataset_length = 2
+    for dataset_id, dataset_points in points.groupby("dataset_id", sort=True):
+        unique = _prepare_curve_points(dataset_points)
+        if len(unique) < 2:
+            continue
+        dataset_frames.append((str(dataset_id), unique))
+        longest_dataset_length = max(longest_dataset_length, len(unique))
+    if not dataset_frames:
+        return pd.DataFrame(columns=["x_real"])
+    point_count = min(max_points, longest_dataset_length)
+    x_min = min(float(frame["x_real"].min()) for _, frame in dataset_frames)
+    x_max = max(float(frame["x_real"].max()) for _, frame in dataset_frames)
+    if x_scale == "log":
+        reference_x = np.geomspace(x_min, x_max, point_count)
+    else:
+        reference_x = np.linspace(x_min, x_max, point_count)
+    replot_frame = pd.DataFrame({"x_real": reference_x})
+    for dataset_id, dataset_points in dataset_frames:
+        y_values = _interp_curve(dataset_points, reference_x)
+        valid = (reference_x >= float(dataset_points["x_real"].min())) & (reference_x <= float(dataset_points["x_real"].max()))
+        replot_frame[dataset_id] = np.where(valid, y_values, np.nan)
+    return replot_frame
+
+
+def create_replot(replot_frame: pd.DataFrame, calibration: AxisCalibration, image_name: str, output_path: Path) -> Path:
+    """Write a clean PNG replot for visual evaluation and return `output_path`."""
+    figure, axis = plt.subplots(figsize=(6.0, 4.2), dpi=DEFAULT_DPI)
+    plotted_columns = 0
+    for column in replot_frame.columns:
+        if column == "x_real":
+            continue
+        series = replot_frame[["x_real", column]].dropna()
+        if series.empty:
+            continue
+        axis.plot(series["x_real"], series[column], linewidth=2.0, label=column)
+        plotted_columns += 1
+    axis.set_title(f"Digitized replot: {image_name}")
+    axis.set_xlabel("X")
+    axis.set_ylabel("Y")
+    axis.set_xscale(calibration.x_scale)
+    axis.set_yscale(calibration.y_scale)
+    axis.set_xlim(calibration.x_min, calibration.x_max)
+    if calibration.invert_y:
+        axis.set_ylim(calibration.y_max, calibration.y_min)
+    else:
+        axis.set_ylim(calibration.y_min, calibration.y_max)
+    axis.grid(True, linestyle=":", alpha=0.35)
+    if 0 < plotted_columns <= MAX_REPLOT_LEGEND_DATASETS:
+        axis.legend()
+    figure.tight_layout()
+    figure.savefig(output_path, dpi=DEFAULT_DPI)
+    plt.close(figure)
+    return output_path
+
+
 def digitize_image(
     image_path: Path,
     output_dir: Path,
@@ -724,14 +792,25 @@ def digitize_image(
         raise RuntimeError(f"No digitized points were extracted from {image_path}.")
 
     csv_path = output_dir / f"{image_path.stem}.digitized.csv"
+    replot_csv_path = output_dir / f"{image_path.stem}.replot.csv"
     metadata_path = output_dir / f"{image_path.stem}.metadata.json"
+    replot_path = output_dir / f"{image_path.stem}.replot.png"
     overlay_path = output_dir / f"{image_path.stem}.overlay.png" if create_overlay_image else None
 
     converted[["dataset_id", "x_real", "y_real", "confidence"]].to_csv(csv_path, index=False)
+    replot_frame = build_replot_frame(converted, x_scale=calibration.x_scale)
+    replot_frame.to_csv(replot_csv_path, index=False)
+    create_replot(replot_frame, calibration, image_path.name, replot_path)
     metadata = {
         "input_image": str(image_path),
         "plot_box": asdict(plot_box),
         "axis": asdict(calibration),
+        "exports": {
+            "digitized_csv": str(csv_path),
+            "replot_csv": str(replot_csv_path),
+            "replot_image": str(replot_path),
+            "overlay_image": str(overlay_path) if overlay_path else None,
+        },
         "preprocessing": preprocess_stats,
         "segmentation": {
             "dataset_count": int(converted["dataset_id"].nunique()),
@@ -754,7 +833,9 @@ def digitize_image(
 
     return DigitizeResult(
         csv_path=csv_path,
+        replot_csv_path=replot_csv_path,
         metadata_path=metadata_path,
+        replot_path=replot_path,
         overlay_path=overlay_path,
         point_count=int(len(converted)),
         dataset_count=int(converted["dataset_id"].nunique()),
@@ -944,10 +1025,16 @@ def run_training(dataset_dir: Path, output_dir: Path, epochs: int, imgsz: int, w
     return training_plan
 
 
+def _prepare_curve_points(points: pd.DataFrame) -> pd.DataFrame:
+    """Return one curve sorted by x with duplicate x-values removed."""
+    return points.drop_duplicates(subset="x_real").sort_values("x_real")
+
+
 def _interp_curve(points: pd.DataFrame, reference_x: np.ndarray) -> np.ndarray:
+    """Linearly interpolate one curve onto a shared x-grid for validation/export."""
     if len(points) < 2:
         raise ValueError("At least two points are required for interpolation.")
-    unique = points.drop_duplicates(subset="x_real").sort_values("x_real")
+    unique = _prepare_curve_points(points)
     interpolator = interp1d(unique["x_real"], unique["y_real"], fill_value="extrapolate")
     return interpolator(reference_x)
 
@@ -1125,7 +1212,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 {
                     "image": str(image_path),
                     "csv_path": str(result.csv_path),
+                    "replot_csv_path": str(result.replot_csv_path),
                     "metadata_path": str(result.metadata_path),
+                    "replot_path": str(result.replot_path),
                     "overlay_path": str(result.overlay_path) if result.overlay_path else None,
                     "point_count": result.point_count,
                     "dataset_count": result.dataset_count,
