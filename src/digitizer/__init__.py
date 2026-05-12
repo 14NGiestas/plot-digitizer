@@ -682,20 +682,23 @@ def create_overlay(image: np.ndarray, points: pd.DataFrame, segmentations: Seque
 
 
 def build_replot_frame(points: pd.DataFrame, max_points: int = MAX_REPLOT_POINTS) -> pd.DataFrame:
-    """Convert tidy digitized points into a wide frame that is easy to plot."""
+    """Convert tidy digitized points into a wide `x_real + dataset columns` frame.
+
+    `max_points` caps the shared interpolation grid density used for the export.
+    """
     if points.empty:
         return pd.DataFrame(columns=["x_real"])
     dataset_frames: list[tuple[str, pd.DataFrame]] = []
-    max_unique_points = 2
+    longest_dataset_length = 2
     for dataset_id, dataset_points in points.groupby("dataset_id", sort=True):
         unique = dataset_points.drop_duplicates(subset="x_real").sort_values("x_real")
         if len(unique) < 2:
             continue
         dataset_frames.append((str(dataset_id), unique))
-        max_unique_points = max(max_unique_points, len(unique))
+        longest_dataset_length = max(longest_dataset_length, len(unique))
     if not dataset_frames:
         return pd.DataFrame(columns=["x_real"])
-    point_count = min(max_points, max_unique_points)
+    point_count = min(max_points, longest_dataset_length)
     x_min = min(float(frame["x_real"].min()) for _, frame in dataset_frames)
     x_max = max(float(frame["x_real"].max()) for _, frame in dataset_frames)
     reference_x = np.linspace(x_min, x_max, point_count)
@@ -708,7 +711,7 @@ def build_replot_frame(points: pd.DataFrame, max_points: int = MAX_REPLOT_POINTS
 
 
 def create_replot(points: pd.DataFrame, calibration: AxisCalibration, image_name: str, output_path: Path) -> Path:
-    """Write a clean line plot from digitized points for quick visual evaluation."""
+    """Write a clean PNG replot for visual evaluation using the calibrated axes."""
     replot_frame = build_replot_frame(points)
     figure, axis = plt.subplots(figsize=(6.0, 4.2), dpi=DEFAULT_DPI)
     plotted_columns = 0
