@@ -10,8 +10,11 @@ Automatic AI-assisted plot digitizer available as a Python package.
 # Install the base package (CV-based digitization)
 uv add git+https://github.com/14NGiestas/plot-digitizer.git
 
-# Or install with AI segmentation support (requires YOLO weights)
+# Install with AI segmentation support (bring your own torch accelerator build)
 uv add "git+https://github.com/14NGiestas/plot-digitizer.git[ai]"
+
+# Or install AI support with CPU torch in one step
+uv add "git+https://github.com/14NGiestas/plot-digitizer.git[ai-cpu]"
 
 # Or install for development
 uv add --dev "git+https://github.com/14NGiestas/plot-digitizer.git[dev]"
@@ -26,8 +29,27 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install -e .
 
 # Or install with optional dependencies
-uv pip install -e ".[ai]"      # AI segmentation support
+uv pip install -e ".[ai]"      # AI tooling only (install torch separately for CUDA/ROCm/CPU)
+uv pip install -e ".[ai-cpu]"  # AI tooling + CPU torch
 uv pip install -e ".[dev]"     # Development tools
+```
+
+### AI accelerator installs (CUDA / ROCm / CPU)
+
+Install torch + torchvision first for your accelerator, then install `digitizer[ai]`:
+
+```bash
+# CUDA (example: CUDA 12.4)
+uv pip install --index-url https://download.pytorch.org/whl/cu124 torch torchvision
+uv pip install "git+https://github.com/14NGiestas/plot-digitizer.git[ai]"
+
+# ROCm (example: ROCm 6.2)
+uv pip install --index-url https://download.pytorch.org/whl/rocm6.2 torch torchvision
+uv pip install "git+https://github.com/14NGiestas/plot-digitizer.git[ai]"
+
+# CPU
+uv pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+uv pip install "git+https://github.com/14NGiestas/plot-digitizer.git[ai]"
 ```
 
 ## Usage
@@ -139,4 +161,5 @@ uv run --from git+https://github.com/14NGiestas/plot-digitizer.git digitizer gen
 - Axis ranges are resolved from CLI hints first, then synthetic sidecar metadata, then safe `0:1` defaults.
 - Pass `--x-range min:max` and `--y-range min:max` when auto-detection is unavailable.
 - `digitize --weights model.pt` supports `.pt` or `.onnx` Ultralytics-compatible weights.
-- The `ai` optional dependency adds `ultralytics` for YOLO-based segmentation.
+- The `ai` optional dependency installs `ultralytics` only; install torch/torchvision for your accelerator (CUDA, ROCm, or CPU).
+- Use `ai-cpu` for a one-step CPU installation.
