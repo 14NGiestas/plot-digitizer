@@ -682,7 +682,7 @@ def create_overlay(image: np.ndarray, points: pd.DataFrame, segmentations: Seque
     cv2.imwrite(str(output_path), overlay)
 
 
-def build_replot_frame(points: pd.DataFrame, max_points: int = MAX_REPLOT_POINTS) -> pd.DataFrame:
+def build_replot_frame(points: pd.DataFrame, x_scale: str = "linear", max_points: int = MAX_REPLOT_POINTS) -> pd.DataFrame:
     """Convert tidy digitized points into a wide `x_real + dataset columns` frame.
 
     `max_points` caps the shared interpolation grid density used for the export.
@@ -703,7 +703,10 @@ def build_replot_frame(points: pd.DataFrame, max_points: int = MAX_REPLOT_POINTS
     point_count = min(max_points, longest_dataset_length)
     x_min = min(float(frame["x_real"].min()) for _, frame in dataset_frames)
     x_max = max(float(frame["x_real"].max()) for _, frame in dataset_frames)
-    reference_x = np.linspace(x_min, x_max, point_count)
+    if x_scale == "log":
+        reference_x = np.geomspace(x_min, x_max, point_count)
+    else:
+        reference_x = np.linspace(x_min, x_max, point_count)
     replot_frame = pd.DataFrame({"x_real": reference_x})
     for dataset_id, dataset_points in dataset_frames:
         y_values = _interp_curve(dataset_points, reference_x)
@@ -795,7 +798,7 @@ def digitize_image(
     overlay_path = output_dir / f"{image_path.stem}.overlay.png" if create_overlay_image else None
 
     converted[["dataset_id", "x_real", "y_real", "confidence"]].to_csv(csv_path, index=False)
-    replot_frame = build_replot_frame(converted)
+    replot_frame = build_replot_frame(converted, x_scale=calibration.x_scale)
     replot_frame.to_csv(replot_csv_path, index=False)
     create_replot(replot_frame, calibration, image_path.name, replot_path)
     metadata = {

@@ -83,6 +83,19 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertGreater(mask.mean(), 0.001)
         self.assertLess(mask.mean(), 0.2)
 
+    def test_build_replot_frame_uses_log_grid_for_log_x_scale(self) -> None:
+        points = pd.DataFrame(
+            {
+                "dataset_id": ["dataset_0"] * 5,
+                "x_real": np.geomspace(1.0, 100.0, 5),
+                "y_real": np.linspace(0.0, 1.0, 5),
+            }
+        )
+
+        replot_frame = digitizer.build_replot_frame(points, x_scale="log", max_points=5)
+
+        np.testing.assert_allclose(replot_frame["x_real"].to_numpy(), np.geomspace(1.0, 100.0, 5))
+
     def test_validate_digitization_enforces_unique_curve_assignment(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
