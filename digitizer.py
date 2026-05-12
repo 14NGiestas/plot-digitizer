@@ -45,6 +45,22 @@ DEFAULT_Y_RANGE = (0.0, 1.0)
 MIN_COMPONENT_PIXELS = 24
 PLOT_MARGIN_FRACTION = 0.02
 DEFAULT_DPI = 140
+MIN_CURVES_PER_PLOT = 1
+MAX_CURVES_PER_PLOT = 3
+VALIDATION_THRESHOLD = 0.05
+SINE_AMPLITUDE_RANGE = (0.5, 1.8)
+SINE_FREQUENCY_RANGE = (0.6, 2.4)
+SINE_OFFSET_RANGE = (-0.75, 0.75)
+EXP_SCALE_RANGE = (0.2, 1.1)
+EXP_GROWTH_RANGE = (0.15, 0.55)
+EXP_OFFSET_RANGE = (-0.8, 0.3)
+DAMPED_AMPLITUDE_RANGE = (0.8, 1.8)
+DAMPED_DECAY_RANGE = (0.05, 0.2)
+DAMPED_FREQUENCY_RANGE = (1.0, 2.6)
+POLY_A_RANGE = (-0.05, 0.05)
+POLY_B_RANGE = (-0.4, 0.4)
+POLY_C_RANGE = (-0.8, 0.8)
+NOISE_STD_RANGE = (0.01, 0.05)
 
 
 @dataclass(slots=True)
@@ -471,7 +487,8 @@ def extract_curve_points(segmentation: SegmentationResult, plot_box: PlotBox, sm
             continue
         y_array = np.asarray(ys)
         if len(y_array) >= smoothing_window and smoothing_window >= 5:
-            y_array = savgol_filter(y_array, smoothing_window if smoothing_window % 2 == 1 else smoothing_window + 1, 2)
+            window_size = smoothing_window if smoothing_window % 2 == 1 else smoothing_window + 1
+            y_array = savgol_filter(y_array, window_size, 2)
         frame = pd.DataFrame(
             {
                 "dataset_id": f"{segmentation.dataset_id}_{part_index}" if len(parts) > 1 else segmentation.dataset_id,
@@ -511,9 +528,12 @@ def create_overlay(image: np.ndarray, points: pd.DataFrame, segmentations: Seque
     for index, segmentation in enumerate(segmentations):
         color = palette[index % len(palette)]
         overlay[segmentation.mask] = (0.35 * overlay[segmentation.mask] + 0.65 * np.array(color)).astype(np.uint8)
-    for index, (x_px, y_px) in enumerate(points[["x_px", "y_px"]].to_numpy()):
-        color = palette[index % len(palette)]
-        cv2.circle(overlay, (int(x_px), int(y_px)), 1, color, -1)
+    dataset_colors = {
+        dataset_id: palette[index % len(palette)]
+        for index, dataset_id in enumerate(points["dataset_id"].drop_duplicates())
+    }
+    for dataset_id, x_px, y_px in points[["dataset_id", "x_px", "y_px"]].itertuples(index=False, name=None):
+        cv2.circle(overlay, (int(x_px), int(y_px)), 1, dataset_colors[dataset_id], -1)
     cv2.imwrite(str(output_path), overlay)
 
 
@@ -588,25 +608,25 @@ def digitize_image(
 def _random_curve(x_values: np.ndarray, rng: np.random.Generator) -> tuple[np.ndarray, str]:
     curve_type = rng.choice(["sin", "poly", "exp", "damped"])
     if curve_type == "sin":
-        amplitude = rng.uniform(0.5, 1.8)
-        frequency = rng.uniform(0.6, 2.4)
+        amplitude = rng.uniform(*SINE_AMPLITUDE_RANGE)
+        frequency = rng.uniform(*SINE_FREQUENCY_RANGE)
         phase = rng.uniform(0.0, math.pi)
-        offset = rng.uniform(-0.75, 0.75)
+        offset = rng.uniform(*SINE_OFFSET_RANGE)
         y_values = offset + amplitude * np.sin(frequency * x_values + phase)
     elif curve_type == "exp":
-        scale = rng.uniform(0.2, 1.1)
-        growth = rng.uniform(0.15, 0.55)
-        offset = rng.uniform(-0.8, 0.3)
+        scale = rng.uniform(*EXP_SCALE_RANGE)
+        growth = rng.uniform(*EXP_GROWTH_RANGE)
+        offset = rng.uniform(*EXP_OFFSET_RANGE)
         y_values = offset + scale * np.exp(growth * (x_values - x_values.min()))
     elif curve_type == "damped":
-        amplitude = rng.uniform(0.8, 1.8)
-        decay = rng.uniform(0.05, 0.2)
-        frequency = rng.uniform(1.0, 2.6)
+        amplitude = rng.uniform(*DAMPED_AMPLITUDE_RANGE)
+        decay = rng.uniform(*DAMPED_DECAY_RANGE)
+        frequency = rng.uniform(*DAMPED_FREQUENCY_RANGE)
         y_values = amplitude * np.exp(-decay * x_values) * np.cos(frequency * x_values)
     else:
-        a, b, c = rng.uniform(-0.05, 0.05), rng.uniform(-0.4, 0.4), rng.uniform(-0.8, 0.8)
+        a, b, c = rng.uniform(*POLY_A_RANGE), rng.uniform(*POLY_B_RANGE), rng.uniform(*POLY_C_RANGE)
         y_values = a * (x_values * x_values) + b * x_values + c
-    noise = rng.normal(0.0, rng.uniform(0.01, 0.05), size=x_values.shape)
+    noise = rng.normal(0.0, rng.uniform(*NOISE_STD_RANGE), size=x_values.shape)
     return y_values + noise, str(curve_type)
 
 
@@ -646,7 +666,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
 
     x_range = (0.0, float(rng.uniform(6.0, 12.0)))
     x_values = np.linspace(*x_range, 480)
-    curve_count = int(rng.integers(1, 4))
+    curve_count = int(rng.integers(MIN_CURVES_PER_PLOT, MAX_CURVES_PER_PLOT + 1))
     raw_curves = [_random_curve(x_values, rng) for _ in range(curve_count)]
     all_y = np.concatenate([curve for curve, _ in raw_curves])
     y_margin = max(0.5, float(np.ptp(all_y) * 0.1))
@@ -820,7 +840,7 @@ def validate_digitization(prediction_csv: Path, truth_csv: Path, output_json: Pa
         "per_curve": metrics,
         "passed_under_5_percent": bool(
             np.mean([row["mae"] / truth_ranges[row["truth_dataset_id"]] for row in metrics])
-            < 0.05
+            < VALIDATION_THRESHOLD
         ),
     }
     if output_json is not None:
