@@ -304,7 +304,7 @@ def run_ai_segmentation(image: np.ndarray, plot_box: PlotBox, weights: str | Non
         return []
     try:
         from ultralytics import YOLO
-    except Exception as exc:  # pragma: no cover - optional dependency path
+    except ImportError as exc:  # pragma: no cover - optional dependency path
         LOGGER.warning("Ultralytics import failed, falling back to CV segmentation: %s", exc)
         return []
 
@@ -358,7 +358,10 @@ def _cluster_by_color(crop: np.ndarray, foreground: np.ndarray) -> list[np.ndarr
     if len(pixels) < 100:
         return []
     filtered = pixels.astype(np.float32)
-    cluster_count = int(min(4, max(1, len(np.unique(filtered, axis=0)))))
+    sample_count = min(len(filtered), 500)
+    sample_indices = np.linspace(0, len(filtered) - 1, sample_count).astype(int)
+    sample = filtered[sample_indices]
+    cluster_count = int(min(4, max(1, len(np.unique(sample, axis=0)))))
     if cluster_count <= 1:
         return []
     model = KMeans(n_clusters=cluster_count, n_init=5, random_state=42)
@@ -508,9 +511,9 @@ def create_overlay(image: np.ndarray, points: pd.DataFrame, segmentations: Seque
     for index, segmentation in enumerate(segmentations):
         color = palette[index % len(palette)]
         overlay[segmentation.mask] = (0.35 * overlay[segmentation.mask] + 0.65 * np.array(color)).astype(np.uint8)
-    for index, (_, row) in enumerate(points.iterrows()):
+    for index, (x_px, y_px) in enumerate(points[["x_px", "y_px"]].to_numpy()):
         color = palette[index % len(palette)]
-        cv2.circle(overlay, (int(row["x_px"]), int(row["y_px"])), 1, color, -1)
+        cv2.circle(overlay, (int(x_px), int(y_px)), 1, color, -1)
     cv2.imwrite(str(output_path), overlay)
 
 
@@ -684,7 +687,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
     fig.tight_layout()
     fig.canvas.draw()
     axis_bbox = ax.get_window_extent(renderer=fig.canvas.get_renderer())
-    height_px, width_px = fig.canvas.get_width_height()[1], fig.canvas.get_width_height()[0]
+    width_px, height_px = fig.canvas.get_width_height()
     plot_box = {
         "left": int(axis_bbox.x0),
         "top": int(height_px - axis_bbox.y1),
@@ -803,7 +806,8 @@ def validate_digitization(prediction_csv: Path, truth_csv: Path, output_json: Pa
             }
             if best is None or score["mae"] < best["mae"]:
                 best = score
-        assert best is not None
+        if best is None:
+            raise ValueError(f"Unable to align predicted curves to truth dataset {truth_id!r}.")
         metrics.append(best)
         total_error.append(best["mae"])
 
