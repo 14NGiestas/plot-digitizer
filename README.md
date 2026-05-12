@@ -8,13 +8,13 @@ Automatic AI-assisted plot digitizer available as a Python package.
 
 ```bash
 # Install the base package (CV-based digitization)
-uv add git+https://github.com/YOUR_USERNAME/plot-digitizer.git
+uv add git+https://github.com/14NGiestas/plot-digitizer.git
 
 # Or install with AI segmentation support (requires YOLO weights)
-uv add "git+https://github.com/YOUR_USERNAME/plot-digitizer.git[ai]"
+uv add "git+https://github.com/14NGiestas/plot-digitizer.git[ai]"
 
 # Or install for development
-uv add --dev "git+https://github.com/YOUR_USERNAME/plot-digitizer.git[dev]"
+uv add --dev "git+https://github.com/14NGiestas/plot-digitizer.git[dev]"
 ```
 
 ### Install from local source
@@ -52,7 +52,7 @@ digitizer validate \
 You can also run commands directly from the Git repository without installing:
 
 ```bash
-uv run --from git+https://github.com/YOUR_USERNAME/plot-digitizer.git digitizer generate --output-dir synthetic-data --count 8
+uv run --from git+https://github.com/14NGiestas/plot-digitizer.git digitizer generate --output-dir synthetic-data --count 8
 ```
 
 ## Commands
