@@ -686,6 +686,7 @@ def build_replot_frame(points: pd.DataFrame, max_points: int = MAX_REPLOT_POINTS
     """Convert tidy digitized points into a wide `x_real + dataset columns` frame.
 
     `max_points` caps the shared interpolation grid density used for the export.
+    Values outside each dataset's observed x-range are left as `NaN`.
     """
     if points.empty:
         return pd.DataFrame(columns=["x_real"])
@@ -712,7 +713,7 @@ def build_replot_frame(points: pd.DataFrame, max_points: int = MAX_REPLOT_POINTS
 
 
 def create_replot(points: pd.DataFrame, calibration: AxisCalibration, image_name: str, output_path: Path) -> Path:
-    """Write a clean PNG replot for visual evaluation using the calibrated axes."""
+    """Write a clean PNG replot for visual evaluation and return `output_path`."""
     replot_frame = build_replot_frame(points)
     figure, axis = plt.subplots(figsize=(6.0, 4.2), dpi=DEFAULT_DPI)
     plotted_columns = 0
