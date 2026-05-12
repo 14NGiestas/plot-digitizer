@@ -1,7 +1,7 @@
 """Command-line entry point for the plot digitizer."""
 
-from digitizer import main
 import sys
+from digitizer import main
 
 if __name__ == "__main__":
     sys.exit(main())
