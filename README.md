@@ -95,6 +95,14 @@ digitizer validate \
   --truth-csv synthetic-data/ground_truth/plot_0000.csv
 ```
 
+Each `digitize` run now writes:
+
+- `*.digitized.csv`: raw extracted points in tidy format
+- `*.replot.csv`: one shared `x_real` column plus one y-column per detected dataset for quick replotting
+- `*.replot.png`: a clean rendered plot of the digitized datasets
+- `*.metadata.json`: calibration and segmentation metadata, including artifact paths
+- `*.overlay.png`: optional overlay when `--overlay` is requested
+
 ### Training workflow (new, continue, and fine-tune)
 
 ```bash
@@ -179,7 +187,7 @@ uv run --from git+https://github.com/14NGiestas/plot-digitizer.git digitizer gen
 
 - `generate`: create synthetic plots, YOLO segmentation labels, sidecar metadata, and ground-truth CSV files
 - `train`: print or execute an Ultralytics YOLOv8 segmentation training plan
-- `digitize`: run AI segmentation when weights are provided and fall back to deterministic CV clustering otherwise; supports known-point axis calibration via `--x-reference/--y-reference` or interactive selection
+- `digitize`: run AI segmentation when weights are provided and fall back to deterministic CV clustering otherwise; supports known-point axis calibration via `--x-reference/--y-reference` or interactive selection, and writes raw plus replot-friendly exports
 - `validate`: compare a digitized CSV with ground truth and report error metrics
 
 ## Notes

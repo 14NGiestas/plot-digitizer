@@ -68,6 +68,7 @@ MINIBATCH_KMEANS_BATCH_SIZE = 1024
 MIN_CURVES_PER_PLOT = 1
 MAX_CURVES_PER_PLOT = 3
 VALIDATION_THRESHOLD = 0.05
+MAX_REPLOT_POINTS = 600
 SINE_AMPLITUDE_RANGE = (0.5, 1.8)
 SINE_FREQUENCY_RANGE = (0.6, 2.4)
 SINE_OFFSET_RANGE = (-0.75, 0.75)
@@ -145,7 +146,9 @@ class DigitizeResult:
     """Final digitization payload for one image."""
 
     csv_path: Path
+    replot_csv_path: Path
     metadata_path: Path
+    replot_path: Path
     overlay_path: Path | None
     point_count: int
     dataset_count: int
@@ -678,6 +681,64 @@ def create_overlay(image: np.ndarray, points: pd.DataFrame, segmentations: Seque
     cv2.imwrite(str(output_path), overlay)
 
 
+def build_replot_frame(points: pd.DataFrame, max_points: int = MAX_REPLOT_POINTS) -> pd.DataFrame:
+    """Convert tidy digitized points into a wide frame that is easy to plot."""
+    if points.empty:
+        return pd.DataFrame(columns=["x_real"])
+    dataset_frames: list[tuple[str, pd.DataFrame]] = []
+    max_unique_points = 2
+    for dataset_id, dataset_points in points.groupby("dataset_id", sort=True):
+        unique = dataset_points.drop_duplicates(subset="x_real").sort_values("x_real")
+        if len(unique) < 2:
+            continue
+        dataset_frames.append((str(dataset_id), unique))
+        max_unique_points = max(max_unique_points, len(unique))
+    if not dataset_frames:
+        return pd.DataFrame(columns=["x_real"])
+    point_count = min(max_points, max_unique_points)
+    x_min = min(float(frame["x_real"].min()) for _, frame in dataset_frames)
+    x_max = max(float(frame["x_real"].max()) for _, frame in dataset_frames)
+    reference_x = np.linspace(x_min, x_max, point_count)
+    replot_frame = pd.DataFrame({"x_real": reference_x})
+    for dataset_id, dataset_points in dataset_frames:
+        y_values = _interp_curve(dataset_points, reference_x)
+        valid = (reference_x >= float(dataset_points["x_real"].min())) & (reference_x <= float(dataset_points["x_real"].max()))
+        replot_frame[dataset_id] = np.where(valid, y_values, np.nan)
+    return replot_frame
+
+
+def create_replot(points: pd.DataFrame, calibration: AxisCalibration, image_name: str, output_path: Path) -> Path:
+    """Write a clean line plot from digitized points for quick visual evaluation."""
+    replot_frame = build_replot_frame(points)
+    figure, axis = plt.subplots(figsize=(6.0, 4.2), dpi=DEFAULT_DPI)
+    plotted_columns = 0
+    for column in replot_frame.columns:
+        if column == "x_real":
+            continue
+        series = replot_frame[["x_real", column]].dropna()
+        if series.empty:
+            continue
+        axis.plot(series["x_real"], series[column], linewidth=2.0, label=column)
+        plotted_columns += 1
+    axis.set_title(f"Digitized replot: {image_name}")
+    axis.set_xlabel("X")
+    axis.set_ylabel("Y")
+    axis.set_xscale(calibration.x_scale)
+    axis.set_yscale(calibration.y_scale)
+    axis.set_xlim(calibration.x_min, calibration.x_max)
+    if calibration.invert_y:
+        axis.set_ylim(calibration.y_max, calibration.y_min)
+    else:
+        axis.set_ylim(calibration.y_min, calibration.y_max)
+    axis.grid(True, linestyle=":", alpha=0.35)
+    if 0 < plotted_columns <= 10:
+        axis.legend()
+    figure.tight_layout()
+    figure.savefig(output_path, dpi=DEFAULT_DPI)
+    plt.close(figure)
+    return output_path
+
+
 def digitize_image(
     image_path: Path,
     output_dir: Path,
@@ -724,14 +785,25 @@ def digitize_image(
         raise RuntimeError(f"No digitized points were extracted from {image_path}.")
 
     csv_path = output_dir / f"{image_path.stem}.digitized.csv"
+    replot_csv_path = output_dir / f"{image_path.stem}.replot.csv"
     metadata_path = output_dir / f"{image_path.stem}.metadata.json"
+    replot_path = output_dir / f"{image_path.stem}.replot.png"
     overlay_path = output_dir / f"{image_path.stem}.overlay.png" if create_overlay_image else None
 
     converted[["dataset_id", "x_real", "y_real", "confidence"]].to_csv(csv_path, index=False)
+    replot_frame = build_replot_frame(converted)
+    replot_frame.to_csv(replot_csv_path, index=False)
+    create_replot(converted, calibration, image_path.name, replot_path)
     metadata = {
         "input_image": str(image_path),
         "plot_box": asdict(plot_box),
         "axis": asdict(calibration),
+        "exports": {
+            "digitized_csv": str(csv_path),
+            "replot_csv": str(replot_csv_path),
+            "replot_image": str(replot_path),
+            "overlay_image": str(overlay_path) if overlay_path else None,
+        },
         "preprocessing": preprocess_stats,
         "segmentation": {
             "dataset_count": int(converted["dataset_id"].nunique()),
@@ -754,7 +826,9 @@ def digitize_image(
 
     return DigitizeResult(
         csv_path=csv_path,
+        replot_csv_path=replot_csv_path,
         metadata_path=metadata_path,
+        replot_path=replot_path,
         overlay_path=overlay_path,
         point_count=int(len(converted)),
         dataset_count=int(converted["dataset_id"].nunique()),
@@ -1125,7 +1199,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 {
                     "image": str(image_path),
                     "csv_path": str(result.csv_path),
+                    "replot_csv_path": str(result.replot_csv_path),
                     "metadata_path": str(result.metadata_path),
+                    "replot_path": str(result.replot_path),
                     "overlay_path": str(result.overlay_path) if result.overlay_path else None,
                     "point_count": result.point_count,
                     "dataset_count": result.dataset_count,

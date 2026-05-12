@@ -42,7 +42,9 @@ class DigitizerWorkflowTests(unittest.TestCase):
             )
 
             self.assertTrue(result.csv_path.exists())
+            self.assertTrue(result.replot_csv_path.exists())
             self.assertTrue(result.metadata_path.exists())
+            self.assertTrue(result.replot_path.exists())
             self.assertTrue(result.overlay_path and result.overlay_path.exists())
 
             summary = digitizer.validate_digitization(result.csv_path, truth_csv)
@@ -53,8 +55,16 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertIn("confidence", frame.columns)
             self.assertGreater(len(frame), 50)
 
+            replot_frame = pd.read_csv(result.replot_csv_path)
+            self.assertIn("x_real", replot_frame.columns)
+            self.assertGreaterEqual(len(replot_frame.columns), 2)
+            self.assertGreater(len(replot_frame), 10)
+
             metadata = json.loads(result.metadata_path.read_text())
             self.assertIn("segmentation", metadata)
+            self.assertIn("exports", metadata)
+            self.assertEqual(metadata["exports"]["replot_csv"], str(result.replot_csv_path))
+            self.assertEqual(metadata["exports"]["replot_image"], str(result.replot_path))
             method_counts_are_ints = all(isinstance(value, int) for value in metadata["segmentation"]["method_counts"].values())
             self.assertTrue(method_counts_are_ints)
 
