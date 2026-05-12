@@ -71,6 +71,7 @@ POLY_A_RANGE = (-0.05, 0.05)
 POLY_B_RANGE = (-0.4, 0.4)
 POLY_C_RANGE = (-0.8, 0.8)
 NOISE_STD_RANGE = (0.01, 0.05)
+AxisReferencePair = tuple[tuple[float, float], tuple[float, float]]
 
 
 @dataclass(slots=True)
@@ -179,7 +180,7 @@ def parse_range(value: str | None, default: tuple[float, float] | None = None) -
     return (start, end)
 
 
-def parse_reference_pair(value: str | None, axis_name: str) -> tuple[tuple[float, float], tuple[float, float]] | None:
+def parse_reference_pair(value: str | None, axis_name: str) -> AxisReferencePair | None:
     """Parse axis reference points in `px0:real0,px1:real1` format."""
     if value is None:
         return None
@@ -237,7 +238,7 @@ def _resolve_bounds_from_references(
     return float(minimum), float(maximum)
 
 
-def interactive_reference_selection(image_path: Path) -> tuple[tuple[tuple[float, float], tuple[float, float]], tuple[tuple[float, float], tuple[float, float]]]:
+def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair, AxisReferencePair]:
     """Collect two X-axis and two Y-axis calibration points interactively."""
     image = cv2.cvtColor(load_image(image_path), cv2.COLOR_BGR2RGB)
     figure, axis = plt.subplots(figsize=(10, 7))
@@ -260,7 +261,7 @@ def interactive_reference_selection(image_path: Path) -> tuple[tuple[tuple[float
             real_value = float(input(f"Enter real X value for X point {x_point_index} at pixel x={x_coord:.1f}: ").strip())
             x_axis_points.append((float(x_coord), real_value))
         else:
-            y_point_index = index - 1
+            y_point_index = index - 2 + 1
             real_value = float(input(f"Enter real Y value for Y point {y_point_index} at pixel y={y_coord:.1f}: ").strip())
             y_axis_points.append((float(y_coord), real_value))
     if np.isclose(x_axis_points[0][0], x_axis_points[1][0]) or np.isclose(y_axis_points[0][0], y_axis_points[1][0]):
@@ -378,8 +379,8 @@ def calibrate_axes(
     plot_box: PlotBox,
     x_range: tuple[float, float] | None,
     y_range: tuple[float, float] | None,
-    x_reference: tuple[tuple[float, float], tuple[float, float]] | None,
-    y_reference: tuple[tuple[float, float], tuple[float, float]] | None,
+    x_reference: AxisReferencePair | None,
+    y_reference: AxisReferencePair | None,
     x_scale: str,
     y_scale: str,
     invert_y: bool,
@@ -672,8 +673,8 @@ def digitize_image(
     output_dir: Path,
     x_range: tuple[float, float] | None,
     y_range: tuple[float, float] | None,
-    x_reference: tuple[tuple[float, float], tuple[float, float]] | None,
-    y_reference: tuple[tuple[float, float], tuple[float, float]] | None,
+    x_reference: AxisReferencePair | None,
+    y_reference: AxisReferencePair | None,
     x_scale: str,
     y_scale: str,
     invert_y: bool,
