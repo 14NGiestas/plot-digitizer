@@ -45,6 +45,12 @@ DEFAULT_Y_RANGE = (0.0, 1.0)
 MIN_COMPONENT_PIXELS = 24
 PLOT_MARGIN_FRACTION = 0.02
 DEFAULT_DPI = 140
+DBSCAN_NOISE_LABEL = -1
+MAX_DARK_THRESHOLD = 220
+DARK_PIXEL_PERCENTILE = 82
+BASE_CV_CONFIDENCE = 0.45
+MAX_CV_CONFIDENCE = 0.99
+MAX_POLYGON_POINTS = 200
 MIN_CURVES_PER_PLOT = 1
 MAX_CURVES_PER_PLOT = 3
 VALIDATION_THRESHOLD = 0.05
@@ -215,7 +221,7 @@ def preprocess_image(image: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
 def detect_plot_box(image: np.ndarray, processed_gray: np.ndarray) -> PlotBox:
     """Detect the plot box using dark-pixel projections and axis heuristics."""
     height, width = processed_gray.shape
-    threshold = min(220, int(np.percentile(processed_gray, 82)))
+    threshold = min(MAX_DARK_THRESHOLD, int(np.percentile(processed_gray, DARK_PIXEL_PERCENTILE)))
     dark_mask = processed_gray < threshold
     row_counts = dark_mask.sum(axis=1)
     col_counts = dark_mask.sum(axis=0)
@@ -320,7 +326,7 @@ def run_ai_segmentation(image: np.ndarray, plot_box: PlotBox, weights: str | Non
         return []
     try:
         from ultralytics import YOLO
-    except ImportError as exc:  # pragma: no cover - optional dependency path
+    except ImportError as exc:  # pragma: no cover - fallback path when ultralytics is unavailable
         LOGGER.warning("Ultralytics import failed, falling back to CV segmentation: %s", exc)
         return []
 
@@ -402,7 +408,7 @@ def _cluster_by_geometry(foreground: np.ndarray) -> list[np.ndarray]:
     points = np.column_stack((xs[indices] / max(1, foreground.shape[1]), ys[indices] / max(1, foreground.shape[0])))
     clustering = DBSCAN(eps=0.04, min_samples=15).fit(points)
     masks: list[np.ndarray] = []
-    for cluster_id in sorted(set(clustering.labels_) - {-1}):
+    for cluster_id in sorted(set(clustering.labels_) - {DBSCAN_NOISE_LABEL}):
         sample_mask = np.zeros(foreground.shape, dtype=bool)
         sample_mask[ys[indices][clustering.labels_ == cluster_id], xs[indices][clustering.labels_ == cluster_id]] = True
         sample_mask = morphology.binary_dilation(sample_mask, morphology.disk(2))
@@ -445,7 +451,12 @@ def run_cv_segmentation(image: np.ndarray, plot_box: PlotBox) -> list[Segmentati
         global_mask[plot_box.top : plot_box.bottom, plot_box.left : plot_box.right] = local_mask
         if global_mask.sum() < MIN_COMPONENT_PIXELS:
             continue
-        confidence = float(min(0.99, 0.45 + global_mask.sum() / max(1, plot_box.width * plot_box.height)))
+        confidence = float(
+            min(
+                MAX_CV_CONFIDENCE,
+                BASE_CV_CONFIDENCE + global_mask.sum() / max(1, plot_box.width * plot_box.height),
+            )
+        )
         results.append(
             SegmentationResult(
                 dataset_id=f"dataset_{index}",
@@ -649,7 +660,7 @@ def _mask_to_yolo_polygon(mask: np.ndarray) -> list[float]:
     contour = max(contours, key=len)
     polygon: list[float] = []
     height, width = mask.shape
-    step = max(1, len(contour) // 200)
+    step = max(1, len(contour) // MAX_POLYGON_POINTS)
     for y_coord, x_coord in contour[::step]:
         polygon.extend([float(np.clip(x_coord / width, 0.0, 1.0)), float(np.clip(y_coord / height, 0.0, 1.0))])
     return polygon if len(polygon) >= 6 else []
