@@ -109,7 +109,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertEqual(parsed, ((20.0, 0.0), (120.0, 10.0)))
 
     def test_calibrate_axes_uses_reference_points_for_non_extreme_axis_points(self) -> None:
-        image_path = Path("/tmp/nonexistent.png")
+        image_path = Path("nonexistent.png")
         plot_box = digitizer.PlotBox(left=10, top=10, right=110, bottom=210)
         calibration, metadata = digitizer.calibrate_axes(
             image_path=image_path,

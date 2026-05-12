@@ -1085,7 +1085,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         x_reference = parse_reference_pair(args.x_reference, "x")
         y_reference = parse_reference_pair(args.y_reference, "y")
         if args.interactive_axis_selection and (x_reference is not None or y_reference is not None):
-            parser.error("Do not combine --interactive-axis-selection with --x-reference/--y-reference.")
+            parser.error("Cannot combine --interactive-axis-selection with --x-reference or --y-reference.")
         if args.interactive_axis_selection and images:
             x_reference, y_reference = interactive_reference_selection(images[0])
         results = []
