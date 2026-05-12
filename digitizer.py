@@ -837,8 +837,8 @@ def validate_digitization(prediction_csv: Path, truth_csv: Path, output_json: Pa
 
     truth_ids = [dataset_id for dataset_id, _ in truth_groups]
     predicted_ids = [dataset_id for dataset_id, _ in predicted_groups]
-    column_count = max(len(truth_groups), len(predicted_groups))
-    cost_matrix = np.full((len(truth_groups), column_count), np.inf, dtype=float)
+    cost_matrix_cols = max(len(truth_groups), len(predicted_groups))
+    cost_matrix = np.full((len(truth_groups), cost_matrix_cols), np.inf, dtype=float)
 
     for truth_index, (truth_id, truth_frame) in enumerate(truth_groups):
         reference_x = truth_frame["x_real"].to_numpy()
@@ -846,7 +846,7 @@ def validate_digitization(prediction_csv: Path, truth_csv: Path, output_json: Pa
         for predicted_index, (_, predicted_frame) in enumerate(predicted_groups):
             aligned = _interp_curve(predicted_frame, reference_x)
             cost_matrix[truth_index, predicted_index] = float(np.mean(np.abs(aligned - truth_y)))
-        for dummy_index in range(len(predicted_groups), column_count):
+        for dummy_index in range(len(predicted_groups), cost_matrix_cols):
             cost_matrix[truth_index, dummy_index] = truth_ranges[truth_id]
 
     truth_assignment, predicted_assignment = linear_sum_assignment(cost_matrix)

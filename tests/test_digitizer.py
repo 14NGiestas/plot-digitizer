@@ -53,7 +53,8 @@ class DigitizerWorkflowTests(unittest.TestCase):
 
             metadata = json.loads(result.metadata_path.read_text())
             self.assertIn("segmentation", metadata)
-            self.assertTrue(all(isinstance(value, int) for value in metadata["segmentation"]["method_counts"].values()))
+            all_counts_are_ints = all(isinstance(value, int) for value in metadata["segmentation"]["method_counts"].values())
+            self.assertTrue(all_counts_are_ints)
 
     def test_render_curve_mask_marks_curve_not_background(self) -> None:
         x_values = np.linspace(0.0, 10.0, 200)
