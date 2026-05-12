@@ -11,6 +11,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   nix-test:
     runs-on: ubuntu-latest
@@ -19,13 +22,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+        uses: DeterminateSystems/nix-installer-action@v22
         with:
           extra-conf: |
             extra-experimental-features = nix-command flakes
 
       - name: Enable Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
+        uses: DeterminateSystems/magic-nix-cache-action@v13
 
       - name: Build package with Nix
         run: nix build .#default
@@ -34,6 +37,7 @@ jobs:
         run: nix develop --command python -m unittest discover -s tests -p 'test_*.py' -v
 
   consumer-test:
+    name: consumer-test (${{ matrix.name }})
     needs: nix-test
     runs-on: ubuntu-latest
     strategy:
@@ -49,13 +53,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+        uses: DeterminateSystems/nix-installer-action@v22
         with:
           extra-conf: |
             extra-experimental-features = nix-command flakes
 
       - name: Enable Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
+        uses: DeterminateSystems/magic-nix-cache-action@v13
 
       - name: Run consumer check via nix run
         if: matrix.mode == 'run'
