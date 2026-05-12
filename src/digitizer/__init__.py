@@ -71,6 +71,7 @@ POLY_A_RANGE = (-0.05, 0.05)
 POLY_B_RANGE = (-0.4, 0.4)
 POLY_C_RANGE = (-0.8, 0.8)
 NOISE_STD_RANGE = (0.01, 0.05)
+AxisReferencePair = tuple[tuple[float, float], tuple[float, float]]
 
 
 @dataclass(slots=True)
@@ -177,6 +178,95 @@ def parse_range(value: str | None, default: tuple[float, float] | None = None) -
     if start == end:
         raise argparse.ArgumentTypeError("Range start and end must differ.")
     return (start, end)
+
+
+def parse_reference_pair(value: str | None, axis_name: str) -> AxisReferencePair | None:
+    """Parse axis reference points in `px0:real0,px1:real1` format."""
+    if value is None:
+        return None
+    points = value.split(",")
+    if len(points) != 2:
+        raise argparse.ArgumentTypeError(f"Expected two {axis_name}-axis points in px0:real0,px1:real1 format.")
+    parsed: list[tuple[float, float]] = []
+    for point in points:
+        parts = point.split(":")
+        if len(parts) != 2:
+            raise argparse.ArgumentTypeError(f"Invalid {axis_name}-axis reference point: {point!r}")
+        pixel_value, real_value = (float(part.strip()) for part in parts)
+        parsed.append((pixel_value, real_value))
+    if parsed[0][0] == parsed[1][0]:
+        raise argparse.ArgumentTypeError(f"{axis_name.upper()}-axis reference pixel positions must differ.")
+    return parsed[0], parsed[1]
+
+
+def _resolve_bounds_from_references(
+    plot_box: PlotBox,
+    first: tuple[float, float],
+    second: tuple[float, float],
+    axis_name: str,
+    scale: str,
+    invert_y: bool,
+) -> tuple[float, float]:
+    """Infer full axis bounds from two known pixel-to-real reference points."""
+    pixel_first, real_first = first
+    pixel_second, real_second = second
+    if axis_name == "x":
+        norm_first = np.clip((pixel_first - plot_box.left) / plot_box.width, 0.0, 1.0)
+        norm_second = np.clip((pixel_second - plot_box.left) / plot_box.width, 0.0, 1.0)
+    else:
+        norm_first = np.clip((plot_box.bottom - pixel_first) / plot_box.height, 0.0, 1.0)
+        norm_second = np.clip((plot_box.bottom - pixel_second) / plot_box.height, 0.0, 1.0)
+        if invert_y:
+            norm_first = 1.0 - norm_first
+            norm_second = 1.0 - norm_second
+    if np.isclose(norm_first, norm_second):
+        raise ValueError(f"{axis_name.upper()}-axis reference points map to the same normalized position.")
+
+    if scale == "log":
+        if real_first <= 0 or real_second <= 0:
+            raise ValueError(f"{axis_name.upper()}-axis logarithmic references require positive real values.")
+        transformed_first = float(np.log(real_first))
+        transformed_second = float(np.log(real_second))
+        slope = (transformed_second - transformed_first) / (norm_second - norm_first)
+        minimum = transformed_first - norm_first * slope
+        maximum = minimum + slope
+        return float(np.exp(minimum)), float(np.exp(maximum))
+
+    slope = (real_second - real_first) / (norm_second - norm_first)
+    minimum = real_first - norm_first * slope
+    maximum = minimum + slope
+    return float(minimum), float(maximum)
+
+
+def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair, AxisReferencePair]:
+    """Collect two X-axis and two Y-axis calibration points interactively."""
+    image = cv2.cvtColor(load_image(image_path), cv2.COLOR_BGR2RGB)
+    figure, axis = plt.subplots(figsize=(10, 7))
+    axis.imshow(image)
+    axis.set_title(
+        "Click in order: X point 1, X point 2, Y point 1, Y point 2\n"
+        "Close window after selecting points."
+    )
+    axis.axis("off")
+    selected_points = plt.ginput(4, timeout=-1)
+    plt.close(figure)
+    if len(selected_points) != 4:
+        raise RuntimeError("Interactive calibration requires selecting exactly 4 points.")
+
+    x_axis_points: list[tuple[float, float]] = []
+    y_axis_points: list[tuple[float, float]] = []
+    for index, (x_coord, y_coord) in enumerate(selected_points):
+        if index < 2:
+            x_point_index = index + 1
+            real_value = float(input(f"Enter real X value for X point {x_point_index} at pixel x={x_coord:.1f}: ").strip())
+            x_axis_points.append((float(x_coord), real_value))
+        else:
+            y_point_index = index - 2 + 1
+            real_value = float(input(f"Enter real Y value for Y point {y_point_index} at pixel y={y_coord:.1f}: ").strip())
+            y_axis_points.append((float(y_coord), real_value))
+    if np.isclose(x_axis_points[0][0], x_axis_points[1][0]) or np.isclose(y_axis_points[0][0], y_axis_points[1][0]):
+        raise RuntimeError("Interactive calibration points must use different pixel positions on each axis.")
+    return (x_axis_points[0], x_axis_points[1]), (y_axis_points[0], y_axis_points[1])
 
 
 def discover_images(inputs: Sequence[str]) -> list[Path]:
@@ -289,6 +379,8 @@ def calibrate_axes(
     plot_box: PlotBox,
     x_range: tuple[float, float] | None,
     y_range: tuple[float, float] | None,
+    x_reference: AxisReferencePair | None,
+    y_reference: AxisReferencePair | None,
     x_scale: str,
     y_scale: str,
     invert_y: bool,
@@ -297,6 +389,24 @@ def calibrate_axes(
     sidecar = _parse_sidecar_metadata(image_path) or {}
     x_bounds = x_range or tuple(sidecar.get("x_range", DEFAULT_X_RANGE))
     y_bounds = y_range or tuple(sidecar.get("y_range", DEFAULT_Y_RANGE))
+    if x_reference is not None:
+        x_bounds = _resolve_bounds_from_references(
+            plot_box=plot_box,
+            first=x_reference[0],
+            second=x_reference[1],
+            axis_name="x",
+            scale=x_scale,
+            invert_y=invert_y,
+        )
+    if y_reference is not None:
+        y_bounds = _resolve_bounds_from_references(
+            plot_box=plot_box,
+            first=y_reference[0],
+            second=y_reference[1],
+            axis_name="y",
+            scale=y_scale,
+            invert_y=invert_y,
+        )
     calibration = AxisCalibration(
         x_min=float(x_bounds[0]),
         x_max=float(x_bounds[1]),
@@ -309,17 +419,17 @@ def calibrate_axes(
     metadata = {
         "origin_pixel": {"x": plot_box.left, "y": plot_box.bottom},
         "axis_detection": {
-            "x_range_source": "cli" if x_range else ("sidecar" if "x_range" in sidecar else "default"),
-            "y_range_source": "cli" if y_range else ("sidecar" if "y_range" in sidecar else "default"),
+            "x_range_source": "reference" if x_reference else ("cli" if x_range else ("sidecar" if "x_range" in sidecar else "default")),
+            "y_range_source": "reference" if y_reference else ("cli" if y_range else ("sidecar" if "y_range" in sidecar else "default")),
             "x_scale": calibration.x_scale,
             "y_scale": calibration.y_scale,
             "invert_y": calibration.invert_y,
         },
         "warnings": [],
     }
-    if not x_range and "x_range" not in sidecar:
+    if not x_range and "x_range" not in sidecar and not x_reference:
         metadata["warnings"].append("X-axis bounds were not auto-detected; defaulting to 0:1. Pass --x-range for better accuracy.")
-    if not y_range and "y_range" not in sidecar:
+    if not y_range and "y_range" not in sidecar and not y_reference:
         metadata["warnings"].append("Y-axis bounds were not auto-detected; defaulting to 0:1. Pass --y-range for better accuracy.")
     return calibration, metadata
 
@@ -563,6 +673,8 @@ def digitize_image(
     output_dir: Path,
     x_range: tuple[float, float] | None,
     y_range: tuple[float, float] | None,
+    x_reference: AxisReferencePair | None,
+    y_reference: AxisReferencePair | None,
     x_scale: str,
     y_scale: str,
     invert_y: bool,
@@ -575,7 +687,17 @@ def digitize_image(
     image = load_image(image_path)
     processed_gray, preprocess_stats = preprocess_image(image)
     plot_box = resolve_plot_box(image_path, image, processed_gray)
-    calibration, axis_metadata = calibrate_axes(image_path, plot_box, x_range, y_range, x_scale, y_scale, invert_y)
+    calibration, axis_metadata = calibrate_axes(
+        image_path=image_path,
+        plot_box=plot_box,
+        x_range=x_range,
+        y_range=y_range,
+        x_reference=x_reference,
+        y_reference=y_reference,
+        x_scale=x_scale,
+        y_scale=y_scale,
+        invert_y=invert_y,
+    )
 
     segmentations = run_ai_segmentation(image, plot_box, weights, conf_threshold)
     if not segmentations:
@@ -910,6 +1032,13 @@ def build_parser() -> argparse.ArgumentParser:
     digitize_parser.add_argument("--output-dir", type=Path, default=Path("digitized-output"))
     digitize_parser.add_argument("--x-range", type=str, default=None)
     digitize_parser.add_argument("--y-range", type=str, default=None)
+    digitize_parser.add_argument("--x-reference", type=str, default=None, help="Known X-axis points in px0:real0,px1:real1 format.")
+    digitize_parser.add_argument("--y-reference", type=str, default=None, help="Known Y-axis points in px0:real0,px1:real1 format.")
+    digitize_parser.add_argument(
+        "--interactive-axis-selection",
+        action="store_true",
+        help="Interactively click two X-axis points and two Y-axis points, then enter their real values.",
+    )
     digitize_parser.add_argument("--x-scale", choices=["linear", "log"], default="linear")
     digitize_parser.add_argument("--y-scale", choices=["linear", "log"], default="linear")
     digitize_parser.add_argument("--invert-y", action="store_true")
@@ -953,6 +1082,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error("No input images were found.")
         x_range = parse_range(args.x_range)
         y_range = parse_range(args.y_range)
+        x_reference = parse_reference_pair(args.x_reference, "x")
+        y_reference = parse_reference_pair(args.y_reference, "y")
+        if args.interactive_axis_selection and (x_reference is not None or y_reference is not None):
+            parser.error("Cannot combine --interactive-axis-selection with --x-reference or --y-reference.")
+        if args.interactive_axis_selection and images:
+            x_reference, y_reference = interactive_reference_selection(images[0])
         results = []
         for image_path in images:
             result = digitize_image(
@@ -960,6 +1095,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_dir=args.output_dir,
                 x_range=x_range,
                 y_range=y_range,
+                x_reference=x_reference,
+                y_reference=y_reference,
                 x_scale=args.x_scale,
                 y_scale=args.y_scale,
                 invert_y=args.invert_y,
