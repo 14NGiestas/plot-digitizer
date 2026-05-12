@@ -4,6 +4,32 @@ Automatic AI-assisted plot digitizer available as a Python package.
 
 ## Installation
 
+### Nix (flake)
+
+Use the repository flake to enter a development shell with Python and project dependencies:
+
+```bash
+nix develop
+```
+
+Inside the shell, run the CLI directly from source:
+
+```bash
+python -m digitizer --help
+```
+
+To run the test suite in a Nix environment:
+
+```bash
+nix develop --command python -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+To run the packaged app through the flake:
+
+```bash
+nix run . -- --help
+```
+
 ### Install directly from Git with uv
 
 ```bash

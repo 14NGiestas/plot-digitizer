@@ -1,0 +1,72 @@
+name: nix-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  nix-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          extra-conf: |
+            extra-experimental-features = nix-command flakes
+
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Build package with Nix
+        run: nix build .#default
+
+      - name: Run test suite in Nix dev shell
+        run: nix develop --command sh -c "PYTHONPATH=src python -m unittest discover -s tests -p 'test_*.py' -v"
+
+  consumer-test:
+    name: consumer-test (${{ matrix.name }})
+    needs: nix-test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: run-packaged-cli
+            mode: run
+          - name: use-dev-shell-from-consumer-dir
+            mode: develop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          extra-conf: |
+            extra-experimental-features = nix-command flakes
+
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Run consumer check via nix run
+        if: matrix.mode == 'run'
+        working-directory: /tmp
+        run: nix run "${{ github.workspace }}" -- --help
+
+      - name: Run consumer check via nix develop
+        if: matrix.mode == 'develop'
+        working-directory: /tmp
+        run: nix develop "${{ github.workspace }}" --command python -m digitizer --help
