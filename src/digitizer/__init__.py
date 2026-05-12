@@ -693,7 +693,7 @@ def build_replot_frame(points: pd.DataFrame, max_points: int = MAX_REPLOT_POINTS
     dataset_frames: list[tuple[str, pd.DataFrame]] = []
     longest_dataset_length = 2
     for dataset_id, dataset_points in points.groupby("dataset_id", sort=True):
-        unique = dataset_points.drop_duplicates(subset="x_real").sort_values("x_real")
+        unique = _prepare_curve_points(dataset_points)
         if len(unique) < 2:
             continue
         dataset_frames.append((str(dataset_id), unique))
@@ -712,9 +712,8 @@ def build_replot_frame(points: pd.DataFrame, max_points: int = MAX_REPLOT_POINTS
     return replot_frame
 
 
-def create_replot(points: pd.DataFrame, calibration: AxisCalibration, image_name: str, output_path: Path) -> Path:
+def create_replot(replot_frame: pd.DataFrame, calibration: AxisCalibration, image_name: str, output_path: Path) -> Path:
     """Write a clean PNG replot for visual evaluation and return `output_path`."""
-    replot_frame = build_replot_frame(points)
     figure, axis = plt.subplots(figsize=(6.0, 4.2), dpi=DEFAULT_DPI)
     plotted_columns = 0
     for column in replot_frame.columns:
@@ -798,7 +797,7 @@ def digitize_image(
     converted[["dataset_id", "x_real", "y_real", "confidence"]].to_csv(csv_path, index=False)
     replot_frame = build_replot_frame(converted)
     replot_frame.to_csv(replot_csv_path, index=False)
-    create_replot(converted, calibration, image_path.name, replot_path)
+    create_replot(replot_frame, calibration, image_path.name, replot_path)
     metadata = {
         "input_image": str(image_path),
         "plot_box": asdict(plot_box),
@@ -1023,11 +1022,16 @@ def run_training(dataset_dir: Path, output_dir: Path, epochs: int, imgsz: int, w
     return training_plan
 
 
+def _prepare_curve_points(points: pd.DataFrame) -> pd.DataFrame:
+    """Return one curve sorted by x with duplicate x-values removed."""
+    return points.drop_duplicates(subset="x_real").sort_values("x_real")
+
+
 def _interp_curve(points: pd.DataFrame, reference_x: np.ndarray) -> np.ndarray:
     """Linearly interpolate one curve onto a shared x-grid for validation/export."""
     if len(points) < 2:
         raise ValueError("At least two points are required for interpolation.")
-    unique = points.drop_duplicates(subset="x_real").sort_values("x_real")
+    unique = _prepare_curve_points(points)
     interpolator = interp1d(unique["x_real"], unique["y_real"], fill_value="extrapolate")
     return interpolator(reference_x)
 
