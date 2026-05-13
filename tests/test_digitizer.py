@@ -168,6 +168,37 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertGreaterEqual(max_class_id, 0)
             self.assertLess(max_class_id, nc_value)
 
+    def test_run_training_raises_import_error_for_missing_torch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_dir = Path(tmp) / "synthetic"
+            output_dir = Path(tmp) / "runs"
+            digitizer.generate_synthetic_dataset(
+                dataset_dir,
+                count=1,
+                seed=3,
+                image_format="png",
+                plot_type="general",
+            )
+
+            real_import = builtins.__import__
+
+            def import_without_torch(name: str, globals=None, locals=None, fromlist=(), level: int = 0):
+                if name == "torch":
+                    raise ImportError("No module named 'torch'")
+                return real_import(name, globals, locals, fromlist, level)
+
+            with patch("builtins.__import__", side_effect=import_without_torch):
+                with self.assertRaisesRegex(ImportError, "torch and torchvision"):
+                    digitizer.run_training(
+                        dataset_dir=dataset_dir,
+                        output_dir=output_dir,
+                        epochs=1,
+                        imgsz=640,
+                        weights="yolov8n-seg.pt",
+                        batch=1,
+                        execute=True,
+                    )
+
     def test_run_training_raises_import_error_for_missing_ai_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dataset_dir = Path(tmp) / "synthetic"
@@ -183,18 +214,14 @@ class DigitizerWorkflowTests(unittest.TestCase):
             real_import = builtins.__import__
 
             def import_without_ultralytics(name: str, globals=None, locals=None, fromlist=(), level: int = 0):
-                if name == "ultralytics":
-                    raise ImportError("No module named 'ultralytics'")
+                if name in ("ultralytics", "torch"):
+                    raise ImportError(f"No module named '{name}'")
                 return real_import(name, globals, locals, fromlist, level)
 
             with patch("builtins.__import__", side_effect=import_without_ultralytics):
                 expected_message = (
-                    "Training requires ultralytics and a matching torch/torchvision build. "
-                    "If ultralytics is missing, install digitizer with the 'ai' extra "
-                    "(`uv pip install -e \".[ai]\"`). Then install torch/torchvision for "
-                    "your accelerator (for example CUDA 11.8: "
-                    "`uv pip install --index-url https://download.pytorch.org/whl/cu118 "
-                    "torch torchvision`), then rerun the command."
+                    "Training requires torch and torchvision, which are not included in the Nix "
+                    "shell by default."
                 )
                 with self.assertRaisesRegex(ImportError, re.escape(expected_message)):
                     digitizer.run_training(

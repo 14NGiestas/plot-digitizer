@@ -20,6 +20,7 @@ import argparse
 import json
 import logging
 import math
+import os
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -1330,15 +1331,30 @@ def run_training(dataset_dir: Path, output_dir: Path, epochs: int, imgsz: int, w
     }
     if execute:
         try:
+            import torch as _torch  # noqa: F401
+        except ImportError:  # pragma: no cover - depends on optional dependency setup
+            cuda_path = os.environ.get("CUDA_PATH", "")
+            rocm_path = os.environ.get("ROCM_PATH", "")
+            if rocm_path:
+                index_url = "https://download.pytorch.org/whl/rocm6.2"
+            elif "11." in cuda_path:
+                index_url = "https://download.pytorch.org/whl/cu118"
+            elif "12." in cuda_path:
+                index_url = "https://download.pytorch.org/whl/cu124"
+            else:
+                index_url = "https://download.pytorch.org/whl/cpu"
+            raise ImportError(
+                "Training requires torch and torchvision, which are not included in the Nix "
+                "shell by default. Install them for your accelerator with:\n"
+                f"  pip install torch torchvision --index-url {index_url}\n"
+                "Then rerun the command. See the README for all accelerator options."
+            )
+        try:
             from ultralytics import YOLO
         except ImportError as exc:  # pragma: no cover - depends on optional dependency setup
             raise ImportError(
-                "Training requires ultralytics and a matching torch/torchvision build. "
-                "If ultralytics is missing, install digitizer with the 'ai' extra "
-                "(`uv pip install -e \".[ai]\"`). Then install torch/torchvision for "
-                "your accelerator (for example CUDA 11.8: "
-                "`uv pip install --index-url https://download.pytorch.org/whl/cu118 "
-                "torch torchvision`), then rerun the command."
+                "Training requires ultralytics. Install digitizer with the 'ai' extra: "
+                "`uv pip install -e \".[ai]\"`"
             ) from exc
 
         model = YOLO(weights)
