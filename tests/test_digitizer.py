@@ -22,7 +22,13 @@ class DigitizerWorkflowTests(unittest.TestCase):
             dataset_dir = root / "synthetic"
             output_dir = root / "digitized"
 
-            digitizer.generate_synthetic_dataset(dataset_dir, count=1, seed=7, image_format="png")
+            digitizer.generate_synthetic_dataset(
+                dataset_dir,
+                count=1,
+                seed=1,
+                image_format="png",
+                plot_type="general",
+            )
             image_path = next((dataset_dir / "images").glob("*.png"))
             truth_csv = next((dataset_dir / "ground_truth").glob("*.csv"))
 

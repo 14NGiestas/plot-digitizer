@@ -867,6 +867,102 @@ def _random_curve(x_values: np.ndarray, rng: np.random.Generator) -> tuple[np.nd
     return y_values + noise, str(curve_type)
 
 
+def _generate_bandstructure_curves(x_values: np.ndarray, rng: np.random.Generator, n_bands: int) -> list[tuple[np.ndarray, str]]:
+    """Generate bandstructure-like curves with multiple bands and avoided crossings."""
+    bands = []
+    
+    # Generate base parabolic bands
+    for band_idx in range(n_bands):
+        band_offset = rng.uniform(-1.5, 1.5)
+        effective_mass = rng.uniform(0.3, 1.2)
+        curvature = rng.choice([-1, 1]) * effective_mass
+        
+        # Base parabola
+        x_centered = x_values - x_values.mean()
+        y_base = band_offset + curvature * (x_centered ** 2) / (x_centered.max() ** 2 + 0.1)
+        
+        # Add avoided crossing features
+        if rng.random() > 0.5 and band_idx < n_bands - 1:
+            crossing_x = rng.uniform(x_values.min(), x_values.max())
+            gap_size = rng.uniform(0.1, 0.4)
+            avoidance = gap_size * np.exp(-((x_values - crossing_x) ** 2) / 0.5)
+            y_base += avoidance * curvature
+        
+        # Add small oscillations (umklapp-like features)
+        if rng.random() > 0.6:
+            osc_freq = rng.uniform(2, 5)
+            osc_amp = rng.uniform(0.02, 0.08)
+            y_base += osc_amp * np.sin(osc_freq * x_values + rng.uniform(0, 2 * np.pi))
+        
+        noise = rng.normal(0.0, rng.uniform(0.005, 0.02), size=x_values.shape)
+        bands.append((y_base + noise, f"band_{band_idx}"))
+    
+    return bands
+
+
+def _render_vbar_mask(fig_size: tuple[float, float], dpi: int, x_pos: float, y_range: tuple[float, float], 
+                      width: float, style: dict[str, Any]) -> np.ndarray:
+    """Render a vertical bar mask."""
+    fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
+    ax.set_facecolor("black")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(*y_range)
+    ax.axvline(x=x_pos, ymin=0, ymax=1, color="white", linewidth=width, linestyle=style.get("linestyle", "-"))
+    ax.axis("off")
+    fig.canvas.draw()
+    buffer = np.asarray(fig.canvas.buffer_rgba())
+    plt.close(fig)
+    return np.max(buffer[:, :, :3], axis=2) > 200
+
+
+def _render_hbar_mask(fig_size: tuple[float, float], dpi: int, y_pos: float, x_range: tuple[float, float],
+                      height: float, style: dict[str, Any]) -> np.ndarray:
+    """Render a horizontal bar mask."""
+    fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
+    ax.set_facecolor("black")
+    ax.set_xlim(*x_range)
+    ax.set_ylim(0, 1)
+    ax.axhline(y=y_pos, xmin=0, xmax=1, color="white", linewidth=height, linestyle=style.get("linestyle", "-"))
+    ax.axis("off")
+    fig.canvas.draw()
+    buffer = np.asarray(fig.canvas.buffer_rgba())
+    plt.close(fig)
+    return np.max(buffer[:, :, :3], axis=2) > 200
+
+
+def _render_arrow_mask(fig_size: tuple[float, float], dpi: int, start: tuple[float, float], 
+                       end: tuple[float, float], style: dict[str, Any]) -> np.ndarray:
+    """Render an arrow annotation mask."""
+    fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
+    ax.set_facecolor("black")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.annotate("", xy=end, xytext=start, arrowprops=dict(arrowstyle="->", color="white", 
+                                                           lw=style.get("linewidth", 2.0)))
+    ax.axis("off")
+    fig.canvas.draw()
+    buffer = np.asarray(fig.canvas.buffer_rgba())
+    plt.close(fig)
+    return np.max(buffer[:, :, :3], axis=2) > 200
+
+
+def _render_error_bar_mask(fig_size: tuple[float, float], dpi: int, x_pos: float, y_pos: float,
+                           y_err: float, style: dict[str, Any]) -> np.ndarray:
+    """Render an error bar mask."""
+    fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
+    ax.set_facecolor("black")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    cap_width = style.get("cap_width", 0.03)
+    ax.errorbar(x_pos, y_pos, yerr=y_err, fmt='none', ecolor="white", 
+                elinewidth=style.get("linewidth", 1.5), capsize=cap_width * fig_size[0] * dpi)
+    ax.axis("off")
+    fig.canvas.draw()
+    buffer = np.asarray(fig.canvas.buffer_rgba())
+    plt.close(fig)
+    return np.max(buffer[:, :, :3], axis=2) > 200
+
+
 def _render_curve_mask(fig_size: tuple[float, float], dpi: int, x_values: np.ndarray, y_values: np.ndarray, x_range: tuple[float, float], y_range: tuple[float, float], style: dict[str, Any]) -> np.ndarray:
     fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
     ax.set_facecolor("black")
@@ -893,7 +989,92 @@ def _mask_to_yolo_polygon(mask: np.ndarray) -> list[float]:
     return polygon if len(polygon) >= 6 else []
 
 
-def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Generator, image_format: str) -> None:
+def _apply_degradation_filters(image_path: Path, rng: np.random.Generator) -> None:
+    """Apply degradation filters to simulate old/scanned article quality.
+    
+    This function applies various image degradations to improve model resilience
+    when processing real-world images from old scientific articles, including:
+    - JPEG compression artifacts
+    - Gaussian noise (film grain simulation)
+    - Blur (low resolution scanning)
+    - Contrast reduction (faded ink)
+    - Binarization (black and white scans)
+    - Salt-and-pepper noise (dust/scratches)
+    
+    Args:
+        image_path: Path to the image file to degrade (modified in-place)
+        rng: NumPy random generator for reproducible randomness
+    """
+    # Load image
+    image = cv2.imread(str(image_path))
+    if image is None:
+        LOGGER.warning("Could not load image for degradation: %s", image_path)
+        return
+    
+    # Randomly select degradation types (can apply multiple)
+    apply_jpeg = rng.random() > 0.3  # 70% chance
+    apply_noise = rng.random() > 0.4  # 60% chance
+    apply_blur = rng.random() > 0.5  # 50% chance
+    apply_contrast = rng.random() > 0.6  # 40% chance
+    apply_bw = rng.random() > 0.85  # 15% chance (less common)
+    apply_salt_pepper = rng.random() > 0.7  # 30% chance
+    
+    degraded = image.copy()
+    
+    # JPEG compression artifacts (re-encode with low quality)
+    if apply_jpeg:
+        quality = int(rng.uniform(15, 75))  # Low to medium quality
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+        _, encoded = cv2.imencode(".jpg", degraded, encode_param)
+        degraded = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+    
+    # Gaussian noise (simulates film grain or scanner noise)
+    if apply_noise:
+        noise_std = rng.uniform(5, 25)
+        noise = rng.normal(0, noise_std, degraded.shape).astype(np.int16)
+        degraded = np.clip(degraded.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+    
+    # Gaussian blur (simulates low-resolution scanning)
+    if apply_blur:
+        kernel_size = int(rng.choice([3, 5, 7]))
+        degraded = cv2.GaussianBlur(degraded, (kernel_size, kernel_size), 0)
+    
+    # Contrast reduction (simulates faded ink or poor photocopying)
+    if apply_contrast:
+        alpha = rng.uniform(0.6, 0.9)  # Reduce contrast
+        beta = rng.uniform(-10, 10)  # Slight brightness shift
+        degraded = cv2.convertScaleAbs(degraded, alpha=alpha, beta=beta)
+    
+    # Salt-and-pepper noise (simulates dust, scratches, or printing artifacts)
+    if apply_salt_pepper:
+        salt_pepper_prob = rng.uniform(0.005, 0.02)
+        salt_mask = rng.random(degraded.shape[:2]) < salt_pepper_prob
+        pepper_mask = rng.random(degraded.shape[:2]) < salt_pepper_prob
+        for c in range(3):
+            degraded[salt_mask, c] = 255
+            degraded[pepper_mask, c] = 0
+    
+    # Convert to black and white (binary or grayscale)
+    if apply_bw:
+        if rng.random() > 0.5:
+            # Pure binary (thresholded)
+            gray = cv2.cvtColor(degraded, cv2.COLOR_BGR2GRAY)
+            _, degraded_binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            degraded = cv2.cvtColor(degraded_binary, cv2.COLOR_GRAY2BGR)
+        else:
+            # Grayscale only
+            gray = cv2.cvtColor(degraded, cv2.COLOR_BGR2GRAY)
+            degraded = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    
+    # Save degraded image
+    cv2.imwrite(str(image_path), degraded)
+    LOGGER.debug("Applied degradations to %s: jpeg=%s, noise=%s, blur=%s, contrast=%s, bw=%s, salt_pepper=%s",
+                 image_path.name, apply_jpeg, apply_noise, apply_blur, apply_contrast, apply_bw, apply_salt_pepper)
+
+
+def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Generator, image_format: str, 
+                             plot_type: str = "general") -> None:
+    """Generate a synthetic plot with support for bandstructures and complex annotations."""
     fig_size = (6.0, 4.2)
     dpi = DEFAULT_DPI
     image_name = f"plot_{index:04d}.{image_format}"
@@ -904,28 +1085,54 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
 
     x_range = (0.0, float(rng.uniform(6.0, 12.0)))
     x_values = np.linspace(*x_range, 480)
-    curve_count = int(rng.integers(MIN_CURVES_PER_PLOT, MAX_CURVES_PER_PLOT + 1))
-    raw_curves = [_random_curve(x_values, rng) for _ in range(curve_count)]
-    all_y = np.concatenate([curve for curve, _ in raw_curves])
-    y_margin = max(0.5, float(np.ptp(all_y) * 0.1))
-    y_range = (float(all_y.min() - y_margin), float(all_y.max() + y_margin))
-
-    colors = ["tab:red", "tab:blue", "tab:green", "tab:purple"]
+    
+    colors = ["tab:red", "tab:blue", "tab:green", "tab:purple", "tab:orange", "tab:cyan"]
     linestyles = ["-", "--", "-.", ":"]
-    linewidths = [2.0, 2.4, 2.2, 2.6]
+    linewidths = [2.0, 2.4, 2.2, 2.6, 1.8, 2.8]
 
     fig, ax = plt.subplots(figsize=fig_size, dpi=dpi)
     if rng.random() > 0.3:
         ax.grid(True, linestyle="--" if rng.random() > 0.5 else ":", alpha=0.4)
     ax.set_xlim(*x_range)
-    ax.set_ylim(*y_range)
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_title("Synthetic Plot")
-
+    
     ground_truth_frames: list[pd.DataFrame] = []
     label_lines: list[str] = []
     curve_descriptors: list[dict[str, Any]] = []
+    annotation_descriptors: list[dict[str, Any]] = []
+    
+    all_y = []
+
+    if plot_type == "bandstructure":
+        # Generate bandstructure-like plots with multiple bands
+        n_bands = int(rng.integers(4, 10))
+        raw_curves = _generate_bandstructure_curves(x_values, rng, n_bands)
+        y_range = (-2.5, 2.5)  # Typical bandstructure energy range
+        ax.set_ylim(*y_range)
+        ax.set_xlabel("k-path")
+        ax.set_ylabel("Energy (eV)")
+        ax.set_title("Band Structure")
+        
+        # Add Fermi level line
+        if rng.random() > 0.5:
+            fermi_y = rng.uniform(-0.5, 0.5)
+            ax.axhline(y=fermi_y, color="gray", linestyle="--", linewidth=1.0, alpha=0.7)
+            annotation_descriptors.append({
+                "type": "hbar",
+                "class_id": 2,  # hbar class
+                "y_pos": fermi_y,
+                "description": "fermi_level"
+            })
+    else:
+        # General plots
+        curve_count = int(rng.integers(MIN_CURVES_PER_PLOT, MAX_CURVES_PER_PLOT + 1))
+        raw_curves = [_random_curve(x_values, rng) for _ in range(curve_count)]
+        all_y = np.concatenate([curve for curve, _ in raw_curves])
+        y_margin = max(0.5, float(np.ptp(all_y) * 0.1))
+        y_range = (float(all_y.min() - y_margin), float(all_y.max() + y_margin))
+        ax.set_ylim(*y_range)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_title("Synthetic Plot")
 
     for curve_index, (y_values, curve_type) in enumerate(raw_curves):
         style = {
@@ -942,6 +1149,89 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         if polygon:
             label_lines.append("0 " + " ".join(f"{value:.6f}" for value in polygon))
 
+    # Add complex annotations (vbars, hbars, arrows, error bars)
+    if rng.random() > 0.4:  # 60% chance of having annotations
+        # Vertical bars (e.g., high-symmetry points in bandstructures)
+        if rng.random() > 0.5:
+            n_vbars = int(rng.integers(1, 4))
+            for vbar_idx in range(n_vbars):
+                x_pos = rng.uniform(0.1, 0.9)
+                vbar_width = rng.uniform(1.0, 3.0)
+                style = {"linewidth": vbar_width, "linestyle": "-"}
+                mask = _render_vbar_mask(fig_size, dpi, x_pos, y_range, vbar_width, style)
+                polygon = _mask_to_yolo_polygon(mask)
+                if polygon:
+                    class_id = 1  # vbar class
+                    label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
+                    annotation_descriptors.append({
+                        "type": "vbar",
+                        "class_id": class_id,
+                        "x_pos": x_pos,
+                        "description": f"high_symmetry_point_{vbar_idx}"
+                    })
+        
+        # Horizontal bars (e.g., threshold lines, Fermi levels)
+        if rng.random() > 0.6:
+            nhbars = int(rng.integers(1, 3))
+            for hbar_idx in range(nhbars):
+                y_pos_norm = rng.uniform(0.1, 0.9)
+                y_pos = y_range[0] + y_pos_norm * (y_range[1] - y_range[0])
+                hbar_height = rng.uniform(1.0, 2.5)
+                style = {"linewidth": hbar_height, "linestyle": "--"}
+                mask = _render_hbar_mask(fig_size, dpi, y_pos_norm, x_range, hbar_height, style)
+                polygon = _mask_to_yolo_polygon(mask)
+                if polygon:
+                    class_id = 2  # hbar class
+                    label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
+                    annotation_descriptors.append({
+                        "type": "hbar",
+                        "class_id": class_id,
+                        "y_pos": y_pos,
+                        "description": f"reference_line_{hbar_idx}"
+                    })
+        
+        # Arrows (annotations pointing to features)
+        if rng.random() > 0.7:
+            n_arrows = int(rng.integers(1, 3))
+            for arrow_idx in range(n_arrows):
+                start = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
+                end = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
+                style = {"linewidth": rng.uniform(1.5, 3.0)}
+                mask = _render_arrow_mask(fig_size, dpi, start, end, style)
+                polygon = _mask_to_yolo_polygon(mask)
+                if polygon:
+                    class_id = 4  # arrow class
+                    label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
+                    annotation_descriptors.append({
+                        "type": "arrow",
+                        "class_id": class_id,
+                        "start": start,
+                        "end": end,
+                        "description": f"annotation_arrow_{arrow_idx}"
+                    })
+        
+        # Error bars
+        if rng.random() > 0.7:
+            n_error_bars = int(rng.integers(2, 6))
+            for eb_idx in range(n_error_bars):
+                x_pos = rng.uniform(0.1, 0.9)
+                y_pos = rng.uniform(0.2, 0.8)
+                y_err = rng.uniform(0.05, 0.2)
+                style = {"linewidth": rng.uniform(1.0, 2.0), "cap_width": 0.02}
+                mask = _render_error_bar_mask(fig_size, dpi, x_pos, y_pos, y_err, style)
+                polygon = _mask_to_yolo_polygon(mask)
+                if polygon:
+                    class_id = 5  # error_bar class
+                    label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
+                    annotation_descriptors.append({
+                        "type": "error_bar",
+                        "class_id": class_id,
+                        "x_pos": x_pos,
+                        "y_pos": y_pos,
+                        "y_err": y_err,
+                        "description": f"error_bar_{eb_idx}"
+                    })
+
     fig.tight_layout()
     fig.canvas.draw()
     axis_bbox = ax.get_window_extent(renderer=fig.canvas.get_renderer())
@@ -952,8 +1242,12 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         "right": int(axis_bbox.x1),
         "bottom": int(height_px - axis_bbox.y0),
     }
-    fig.savefig(image_path, dpi=dpi)
+    
+    fig.savefig(image_path, dpi=dpi, format=image_format)
     plt.close(fig)
+    
+    # Apply degradation filters to simulate old/scanned article quality
+    _apply_degradation_filters(image_path, rng)
 
     ground_truth = pd.concat(ground_truth_frames, ignore_index=True)
     ground_truth.to_csv(ground_truth_path, index=False)
@@ -966,20 +1260,38 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         "y_scale": "linear",
         "invert_y": False,
         "plot_box": plot_box,
+        "plot_type": plot_type,
         "curves": curve_descriptors,
+        "annotations": annotation_descriptors,
         "ground_truth_csv": str(ground_truth_path),
     }
     metadata_path.write_text(json.dumps(metadata, indent=2))
 
 
-def generate_synthetic_dataset(output_dir: Path, count: int, seed: int, image_format: str) -> None:
-    """Generate a synthetic plot dataset with YOLO segmentation labels."""
+def generate_synthetic_dataset(output_dir: Path, count: int, seed: int, image_format: str, 
+                                plot_type: str = "mixed") -> None:
+    """Generate a synthetic plot dataset with YOLO segmentation labels.
+    
+    Args:
+        output_dir: Output directory for the dataset
+        count: Number of images to generate
+        seed: Random seed for reproducibility
+        image_format: Image format (png or jpg)
+        plot_type: Type of plots to generate - "general", "bandstructure", or "mixed"
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     for subdir in ("images", "labels", "ground_truth"):
         (output_dir / subdir).mkdir(exist_ok=True)
     rng = np.random.default_rng(seed)
+    
     for index in range(count):
-        _write_synthetic_example(index, output_dir, rng, image_format)
+        if plot_type == "mixed":
+            current_plot_type = rng.choice(["general", "bandstructure"])
+        else:
+            current_plot_type = plot_type
+        _write_synthetic_example(index, output_dir, rng, image_format, current_plot_type)
+    
+    # Updated class names for multi-class segmentation (6 classes)
     dataset_yaml = output_dir / "dataset.yaml"
     dataset_yaml.write_text(
         "\n".join(
@@ -988,8 +1300,13 @@ def generate_synthetic_dataset(output_dir: Path, count: int, seed: int, image_fo
                 "train: images",
                 "val: images",
                 "test: images",
+                "nc: 6",
                 "names:",
                 "  0: curve",
+                "  1: vbar",
+                "  2: hbar", 
+                "  3: arrow",
+                "  4: error_bar",
             ]
         )
     )
@@ -1114,6 +1431,8 @@ def build_parser() -> argparse.ArgumentParser:
     generate_parser.add_argument("--count", type=int, default=16)
     generate_parser.add_argument("--seed", type=int, default=42)
     generate_parser.add_argument("--image-format", default="png", choices=["png", "jpg"])
+    generate_parser.add_argument("--plot-type", default="mixed", choices=["general", "bandstructure", "mixed"],
+                                  help="Type of plots: general (standard curves), bandstructure (physics band diagrams), or mixed")
 
     train_parser = subparsers.add_parser("train", help="Train or plan a YOLO segmentation model.")
     train_parser.add_argument("--dataset-dir", type=Path, required=True)
@@ -1164,8 +1483,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     configure_logging(args.verbose)
 
     if args.command == "generate":
-        generate_synthetic_dataset(args.output_dir, args.count, args.seed, args.image_format)
-        LOGGER.info("Generated %s synthetic plots in %s", args.count, args.output_dir)
+        generate_synthetic_dataset(args.output_dir, args.count, args.seed, args.image_format, args.plot_type)
+        LOGGER.info("Generated %s synthetic plots (%s) in %s", args.count, args.plot_type, args.output_dir)
         return 0
 
     if args.command == "train":

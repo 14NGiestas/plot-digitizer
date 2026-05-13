@@ -1,43 +1,38 @@
 ```
-# Nix-related
-result
-.nix-*
+# Compiled Python files
+*.pyc
+__pycache__/
 
-# Environment variables
-.env
-.env.local
-*.env.*
-
-# Logs
-*.log
-
-# Temporary files
-*.tmp
-*~
-.swp
-.swo
-
-# OS-specific
-.DS_Store
-Thumbs.db
+# Dependencies
+.venv/
+venv/
+node_modules/
 
 # Build artifacts
 dist/
 build/
 target/
 
-# Dependencies
-node_modules/
-__pycache__/
-.venv/
-venv/
-.mypy_cache/
-.pytest_cache/
-.coverage
-coverage/
-htmlcov/
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+
+# Environment files
+.env
+.env.local
+*.env.*
 
 # Editors
 .vscode/
 .idea/
+
+# Coverage reports
+.coverage
+coverage/
+htmlcov/
+
+# OS specific
+.DS_Store
+Thumbs.db
 ```
