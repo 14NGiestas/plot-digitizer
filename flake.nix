@@ -14,6 +14,9 @@
           config.allowUnfree = true; # required for CUDA packages
         };
         python = pkgs.python312;
+        commonSystemLibs = with pkgs; [
+          xorg.libxcb
+        ];
 
         # Core Python packages shared across all shells
         corePythonPkgs = ps: with ps; [
@@ -34,7 +37,7 @@
           packages = [
             (python.withPackages corePythonPkgs)
             pkgs.uv
-          ] ++ extraPkgs;
+          ] ++ commonSystemLibs ++ extraPkgs;
           inherit shellHook;
         };
 
@@ -103,6 +106,8 @@
           nativeBuildInputs = with python.pkgs; [
             hatchling
           ];
+
+          buildInputs = commonSystemLibs;
 
           propagatedBuildInputs = with python.pkgs; [
             matplotlib
