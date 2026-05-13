@@ -71,6 +71,17 @@
           scikit-learn
           scipy
         ];
+        # `ps` is the shell-selected Python package set; `defaultPs` is a
+        # fallback set used when shell-specific overlays do not export
+        # `ultralytics` (observed in some CUDA legacy package-set layouts).
+        # Prefer the shell package set first so accelerator-tuned builds win.
+        aiPythonPkgs = defaultPs: ps:
+          let
+            hasShellUltralytics = ps ? ultralytics;
+            hasDefaultUltralytics = defaultPs ? ultralytics;
+          in
+          pkgs.lib.optionals hasShellUltralytics [ ps.ultralytics ]
+          ++ pkgs.lib.optionals (!hasShellUltralytics && hasDefaultUltralytics) [ defaultPs.ultralytics ];
         digitizerShellCommand = pkgs.writeShellScriptBin "digitizer" ''
           exec python -m digitizer "$@"
         '';
@@ -94,8 +105,24 @@
         gpuShells = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           let
             rocmPkgs = pkgs.pkgsRocm;
-            cudaPkgs = pkgs.pkgsCuda;
+            cudaPkgs = if pkgs ? pkgsCuda then pkgs.pkgsCuda else pkgs;
             cudaLegacyPkgs = pkgs.cudaPackages_11_8;
+            # Prefer legacy-set Python first (python310 when exposed) for CUDA
+            # 11.8 compatibility, then progressively fall back to broader sets.
+            cudaLegacyPython =
+              if cudaLegacyPkgs ? python310 then cudaLegacyPkgs.python310
+              else if cudaLegacyPkgs ? python then cudaLegacyPkgs.python
+              else if cudaPkgs ? python312 then cudaPkgs.python312
+              else pkgs.python312;
+            cudaLegacyPythonSource =
+              if cudaLegacyPkgs ? python310 then "cudaLegacyPkgs.python310"
+              else if cudaLegacyPkgs ? python then "cudaLegacyPkgs.python"
+              else if cudaPkgs ? python312 then "cudaPkgs.python312"
+              else "pkgs.python312";
+            cudaLegacyPythonVersion =
+              if cudaLegacyPython ? pythonVersion then cudaLegacyPython.pythonVersion
+              else if cudaLegacyPython ? version then cudaLegacyPython.version
+              else "unknown";
 
             # --- ROCm / HIP (AMD GPU) ---
             rocmLibs = with rocmPkgs.rocmPackages; [
@@ -124,7 +151,7 @@
             rocm = mkPyShell {
               shellPython = rocmPkgs.python312;
               extraPkgs = rocmLibs;
-              extraPythonPkgs = ps: with ps; [ ultralytics ];
+              extraPythonPkgs = aiPythonPkgs python.pkgs;
               shellHook = ''
                 export ROCM_PATH="${rocmPkgs.rocmPackages.rocm-runtime}"
                 export HIP_PATH="${rocmPkgs.rocmPackages.clr}"
@@ -142,7 +169,7 @@
             cuda = mkPyShell {
               shellPython = cudaPkgs.python312;
               extraPkgs = cudaLibs;
-              extraPythonPkgs = ps: with ps; [ ultralytics ];
+              extraPythonPkgs = aiPythonPkgs python.pkgs;
               shellHook = ''
                 export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
@@ -153,13 +180,13 @@
 
             # NVIDIA GPU — CUDA legacy (driver 470 class via CUDA 11.8 userspace)
             cuda-legacy = mkPyShell {
-              shellPython = python;
+              shellPython = cudaLegacyPython;
               extraPkgs = cudaLegacyLibs;
-              extraPythonPkgs = ps: with ps; [ ultralytics ];
+              extraPythonPkgs = aiPythonPkgs python.pkgs;
               shellHook = ''
                 export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-                echo "CUDA legacy shell ready (Python 3.12, CUDA 11.8 userspace)."
+                echo "CUDA legacy shell ready (Python ${cudaLegacyPythonVersion} from ${cudaLegacyPythonSource}, CUDA 11.8 userspace)."
                 echo "AI dependencies are included by default in this shell."
               '';
             };
