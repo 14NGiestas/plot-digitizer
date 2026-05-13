@@ -146,7 +146,18 @@ digitizer train \
   --epochs 50 \
   --execute
 
-# 4) Continue training from a previous checkpoint (resume)
+# 4) Execute a recall-focused run with mosaic disabled and tuned overrides
+digitizer train \
+  --dataset-dir synthetic-data \
+  --output-dir training-runs \
+  --weights training-runs/synthetic_plot_digitizer/weights/last.pt \
+  --epochs 253 \
+  --imgsz 768 \
+  --batch 6 \
+  --hyp-yaml runs/hyp_plot_recall.yaml \
+  --execute
+
+# 5) Continue training from a previous checkpoint (resume)
 digitizer train \
   --dataset-dir synthetic-data \
   --output-dir training-runs \
@@ -154,13 +165,29 @@ digitizer train \
   --epochs 30 \
   --execute
 
-# 5) Fine-tune from best checkpoint on updated data
+# 6) Fine-tune from best checkpoint on updated data
 digitizer train \
   --dataset-dir synthetic-data \
   --output-dir training-runs-finetune \
   --weights training-runs/synthetic_plot_digitizer/weights/best.pt \
   --epochs 20 \
   --execute
+```
+
+### Diagnostics toolkit
+
+```bash
+# Run per-class metrics, confidence histogram, and worst-recall overlays
+python scripts/yolo_diagnostics.py \
+  --model training-runs/synthetic_plot_digitizer/weights/best.pt \
+  --data-yaml synthetic-data/dataset.yaml \
+  --images-dir synthetic-data/images \
+  --labels-dir synthetic-data/labels \
+  --output-dir training-runs/diagnostics \
+  --conf 0.10 \
+  --iou 0.60 \
+  --target-classes 0 \
+  --worst-k 20
 ```
 
 ### Predict on a real plot image
@@ -186,6 +213,12 @@ digitizer digitize real-plots/plot.png \
   --weights training-runs/synthetic_plot_digitizer/weights/best.pt \
   --x-reference "120:0,880:10" \
   --y-reference "710:0,120:100"
+```
+
+When explicit references are not provided, the digitizer now attempts to auto-detect axis anchor pixels from strong axis lines and uses the resolved axis ranges for calibration. Disable this fallback with:
+
+```bash
+digitizer digitize real-plots/plot.png --disable-auto-axis-anchors
 ```
 
 You can also select those axis points interactively:
@@ -217,5 +250,6 @@ uv run --from git+https://github.com/14NGiestas/plot-digitizer.git digitizer gen
 - Axis ranges are resolved from CLI hints first, then synthetic sidecar metadata, then safe `0:1` defaults.
 - Pass `--x-range min:max` and `--y-range min:max` when auto-detection is unavailable.
 - `digitize --weights model.pt` supports `.pt` or `.onnx` Ultralytics-compatible weights.
+- `train --hyp-yaml path/to/file.yaml` passes Ultralytics override configuration (`cfg`) for training hyperparameters.
 - The `ai` optional dependency installs `ultralytics` only; install torch/torchvision for your accelerator (CUDA, ROCm, or CPU).
 - Use `ai-cpu` for a one-step CPU installation.
