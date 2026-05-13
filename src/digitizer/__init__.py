@@ -133,11 +133,21 @@ class AxisCalibration:
     x_scale: str = "linear"
     y_scale: str = "linear"
     invert_y: bool = False
+    x_pixel_min: float | None = None
+    x_pixel_max: float | None = None
+    y_pixel_bottom: float | None = None
+    y_pixel_top: float | None = None
 
     def pixel_to_real(self, x_px: np.ndarray, y_px: np.ndarray, plot_box: PlotBox) -> tuple[np.ndarray, np.ndarray]:
         """Convert pixel arrays to real-world coordinates."""
-        x_norm = np.clip((x_px - plot_box.left) / plot_box.width, 0.0, 1.0)
-        y_norm = np.clip((plot_box.bottom - y_px) / plot_box.height, 0.0, 1.0)
+        x_left = float(self.x_pixel_min if self.x_pixel_min is not None else plot_box.left)
+        x_right = float(self.x_pixel_max if self.x_pixel_max is not None else plot_box.right)
+        y_bottom = float(self.y_pixel_bottom if self.y_pixel_bottom is not None else plot_box.bottom)
+        y_top = float(self.y_pixel_top if self.y_pixel_top is not None else plot_box.top)
+        x_span = max(np.finfo(float).eps, x_right - x_left)
+        y_span = max(np.finfo(float).eps, y_bottom - y_top)
+        x_norm = np.clip((x_px - x_left) / x_span, 0.0, 1.0)
+        y_norm = np.clip((y_bottom - y_px) / y_span, 0.0, 1.0)
         if self.invert_y:
             y_norm = 1.0 - y_norm
         x_real = _norm_to_scale(x_norm, self.x_min, self.x_max, self.x_scale)
@@ -489,6 +499,10 @@ def calibrate_axes(
         x_scale=str(sidecar.get("x_scale", x_scale)),
         y_scale=str(sidecar.get("y_scale", y_scale)),
         invert_y=bool(sidecar.get("invert_y", invert_y)),
+        x_pixel_min=(auto_anchor_pixels["x"][0] if used_auto_x and auto_anchor_pixels is not None else None),
+        x_pixel_max=(auto_anchor_pixels["x"][1] if used_auto_x and auto_anchor_pixels is not None else None),
+        y_pixel_bottom=(auto_anchor_pixels["y"][0] if used_auto_y and auto_anchor_pixels is not None else None),
+        y_pixel_top=(auto_anchor_pixels["y"][1] if used_auto_y and auto_anchor_pixels is not None else None),
     )
     metadata = {
         "origin_pixel": {"x": plot_box.left, "y": plot_box.bottom},
@@ -1237,6 +1251,15 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         ax.set_ylabel("Y")
         ax.set_title("Synthetic Plot")
 
+    x_axis_scale = "log" if use_log_x else "linear"
+
+    def _x_norm_to_data(norm_x: float) -> float:
+        norm = np.array([float(np.clip(norm_x, 0.0, 1.0))], dtype=float)
+        return float(_norm_to_scale(norm, x_range[0], x_range[1], x_axis_scale)[0])
+
+    def _y_norm_to_data(norm_y: float) -> float:
+        return float(y_range[0] + float(np.clip(norm_y, 0.0, 1.0)) * (y_range[1] - y_range[0]))
+
     for curve_index, (y_values, curve_type) in enumerate(raw_curves):
         style = {
             "color": colors[curve_index % len(colors)],
@@ -1268,6 +1291,8 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         x_pos = rng.uniform(0.1, 0.9)
         vbar_width = rng.uniform(1.0, 3.0)
         style = {"linewidth": vbar_width, "linestyle": "-"}
+        vbar_x = _x_norm_to_data(x_pos)
+        ax.axvline(x=vbar_x, ymin=0, ymax=1, color="black", linewidth=vbar_width, linestyle=style["linestyle"])
         mask = _render_vbar_mask(fig_size, dpi, x_pos, y_range, vbar_width, style)
         polygon = _mask_to_yolo_polygon(mask)
         if polygon:
@@ -1286,6 +1311,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         y_pos = y_range[0] + y_pos_norm * (y_range[1] - y_range[0])
         hbar_height = rng.uniform(1.0, 2.5)
         style = {"linewidth": hbar_height, "linestyle": "--"}
+        ax.axhline(y=y_pos, xmin=0, xmax=1, color="black", linewidth=hbar_height, linestyle=style["linestyle"])
         mask = _render_hbar_mask(fig_size, dpi, y_pos_norm, x_range, hbar_height, style, x_scale="log" if use_log_x else "linear")
         polygon = _mask_to_yolo_polygon(mask)
         if polygon:
@@ -1304,6 +1330,12 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         start = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
         end = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
         style = {"linewidth": rng.uniform(1.5, 3.0)}
+        ax.annotate(
+            "",
+            xy=(_x_norm_to_data(end[0]), _y_norm_to_data(end[1])),
+            xytext=(_x_norm_to_data(start[0]), _y_norm_to_data(start[1])),
+            arrowprops={"arrowstyle": "->", "color": "black", "lw": style["linewidth"]},
+        )
         mask = _render_arrow_mask(fig_size, dpi, start, end, style)
         polygon = _mask_to_yolo_polygon(mask)
         if polygon:
@@ -1323,6 +1355,16 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         y_pos = rng.uniform(0.2, 0.8)
         y_err = rng.uniform(0.05, 0.2)
         style = {"linewidth": rng.uniform(1.0, 2.0), "cap_width": 0.02}
+        y_err_data = float(y_err * (y_range[1] - y_range[0]))
+        ax.errorbar(
+            _x_norm_to_data(x_pos),
+            _y_norm_to_data(y_pos),
+            yerr=y_err_data,
+            fmt="none",
+            ecolor="black",
+            elinewidth=style["linewidth"],
+            capsize=style["cap_width"] * fig_size[0] * dpi,
+        )
         mask = _render_error_bar_mask(fig_size, dpi, x_pos, y_pos, y_err, style)
         polygon = _mask_to_yolo_polygon(mask)
         if polygon:

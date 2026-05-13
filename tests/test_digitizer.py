@@ -323,6 +323,49 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertEqual(metadata["axis_detection"]["x_range_source"], "auto-anchor")
         self.assertEqual(metadata["axis_detection"]["y_range_source"], "auto-anchor")
         self.assertIsNotNone(metadata["axis_anchor_pixels"])
+        x_anchor_left, x_anchor_right = metadata["axis_anchor_pixels"]["x"]
+        y_anchor_bottom, y_anchor_top = metadata["axis_anchor_pixels"]["y"]
+        x_anchor_real, _ = calibration.pixel_to_real(np.array([x_anchor_left, x_anchor_right]), np.array([y_anchor_bottom, y_anchor_bottom]), plot_box)
+        _, y_anchor_real = calibration.pixel_to_real(np.array([x_anchor_left, x_anchor_left]), np.array([y_anchor_bottom, y_anchor_top]), plot_box)
+        self.assertAlmostEqual(float(x_anchor_real[0]), 0.0, places=4)
+        self.assertAlmostEqual(float(x_anchor_real[1]), 10.0, places=4)
+        self.assertAlmostEqual(float(y_anchor_real[0]), 0.0, places=4)
+        self.assertAlmostEqual(float(y_anchor_real[1]), 100.0, places=4)
+        self.assertEqual(calibration.x_pixel_min, x_anchor_left)
+        self.assertEqual(calibration.x_pixel_max, x_anchor_right)
+        self.assertEqual(calibration.y_pixel_bottom, y_anchor_bottom)
+        self.assertEqual(calibration.y_pixel_top, y_anchor_top)
+        self.assertNotEqual(calibration.x_pixel_min, plot_box.left)
+
+    def test_write_synthetic_example_draws_vbar_hbar_and_error_bar_on_main_axis(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for subdir in ("images", "labels", "ground_truth"):
+                (root / subdir).mkdir()
+            rng = np.random.default_rng(7)
+            solid_mask = np.zeros((120, 120), dtype=bool)
+            solid_mask[20:100, 30:90] = True
+            with (
+                patch("digitizer._apply_degradation_filters"),
+                patch("digitizer._render_curve_mask", return_value=solid_mask),
+                patch("digitizer._render_vbar_mask", return_value=solid_mask),
+                patch("digitizer._render_hbar_mask", return_value=solid_mask),
+                patch("digitizer._render_arrow_mask", return_value=solid_mask),
+                patch("digitizer._render_error_bar_mask", return_value=solid_mask),
+                patch("matplotlib.axes.Axes.axvline") as mock_axvline,
+                patch("matplotlib.axes.Axes.axhline") as mock_axhline,
+                patch("matplotlib.axes.Axes.errorbar") as mock_errorbar,
+            ):
+                digitizer._write_synthetic_example(0, root, rng, image_format="png", plot_type="general")
+
+            metadata = json.loads((root / "images" / "plot_0000.metadata.json").read_text())
+            annotation_counts: dict[str, int] = {}
+            for annotation in metadata["annotations"]:
+                annotation_counts[annotation["type"]] = annotation_counts.get(annotation["type"], 0) + 1
+
+            self.assertEqual(mock_axvline.call_count, annotation_counts.get("vbar", 0))
+            self.assertEqual(mock_axhline.call_count, annotation_counts.get("hbar", 0))
+            self.assertEqual(mock_errorbar.call_count, annotation_counts.get("error_bar", 0))
 
     def test_gpu_shells_auto_install_torch_via_venv(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
