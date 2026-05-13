@@ -114,6 +114,23 @@
           scikit-learn
           scipy
         ];
+        # Build a shellHook fragment that auto-creates an accelerator-specific
+        # Python venv (with --system-site-packages so it inherits ultralytics
+        # and other Nix-provided packages) and installs torch/torchvision from
+        # the given PyTorch wheel index on first entry (or if torch is missing).
+        # The venv is activated for the interactive shell session.
+        mkAiVenvHook = { venvName, torchIndexUrl }: ''
+          _ai_venv="''${DIGITIZER_SRC_ROOT:-$PWD}/.${venvName}"
+          if [ ! -d "$_ai_venv" ] || ! "$_ai_venv/bin/python" -c "import torch; import torchvision" 2>/dev/null; then
+            echo "Setting up AI environment (${venvName}) — installing torch/torchvision..."
+            python -m venv --system-site-packages "$_ai_venv"
+            "$_ai_venv/bin/pip" install --quiet torch torchvision \
+              --index-url ${torchIndexUrl}
+            echo "torch/torchvision installed into ''${_ai_venv}."
+          fi
+          . "$_ai_venv/bin/activate"
+        '';
+
         # `ps` is the shell-selected Python package set; `defaultPs` is a
         # fallback set used when shell-specific overlays do not export
         # `ultralytics` (observed in some CUDA legacy package-set layouts).
@@ -147,7 +164,7 @@
         # GPU-specific shells are only meaningful on Linux
         gpuShells = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           let
-            rocmPkgs = pkgs.pkgsRocm;
+            rocmPkgs = if pkgs ? pkgsRocm then pkgs.pkgsRocm else pkgs;
             cudaPkgs = if pkgs ? pkgsCuda then pkgs.pkgsCuda else pkgs;
             cudaLegacyPkgs = pkgs.cudaPackages_11_8;
             # Prefer legacy-set Python first (python310 when exposed) for CUDA
@@ -203,8 +220,11 @@
                 # HSA_OVERRIDE_GFX_VERSION forces the correct ISA when the ROCm runtime
                 # cannot auto-detect the iGPU (common on newer APUs).
                 export HSA_OVERRIDE_GFX_VERSION="11.0.3"
-                echo "ROCm shell ready (gfx1103 / Radeon 780M)."
-                echo "AI dependencies are included by default in this shell."
+              '' + mkAiVenvHook {
+                venvName = "venv-ai-rocm";
+                torchIndexUrl = "https://download.pytorch.org/whl/rocm6.2";
+              } + ''
+                echo "ROCm shell ready (gfx1103 / Radeon 780M). Ultralytics + torch active."
               '';
             };
 
@@ -216,8 +236,11 @@
               shellHook = ''
                 export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-                echo "CUDA shell ready."
-                echo "AI dependencies are included by default in this shell."
+              '' + mkAiVenvHook {
+                venvName = "venv-ai-cuda";
+                torchIndexUrl = "https://download.pytorch.org/whl/cu124";
+              } + ''
+                echo "CUDA shell ready. Ultralytics + torch active."
               '';
             };
 
@@ -229,8 +252,11 @@
               shellHook = ''
                 export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-                echo "CUDA legacy shell ready (Python ${cudaLegacyPythonVersion} from ${cudaLegacyPythonSource}, CUDA 11.8 userspace)."
-                echo "AI dependencies are included by default in this shell."
+              '' + mkAiVenvHook {
+                venvName = "venv-ai-cuda-legacy";
+                torchIndexUrl = "https://download.pytorch.org/whl/cu118";
+              } + ''
+                echo "CUDA legacy shell ready (Python ${cudaLegacyPythonVersion} from ${cudaLegacyPythonSource}, CUDA 11.8 userspace). Ultralytics + torch active."
               '';
             };
           }

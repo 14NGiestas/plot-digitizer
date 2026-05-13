@@ -23,6 +23,7 @@ node_modules/
 venv/
 .venv/
 .venv-ai/
+.venv-ai-*/
 __pycache__/
 *.egg-info/
 dist/

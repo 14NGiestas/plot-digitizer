@@ -21,19 +21,19 @@ Use the shell that matches your hardware:
 
 Inside these shells, `digitizer` is already available. The GPU shells (`rocm`,
 `cuda`, and `cuda-legacy`) include `ultralytics` as a proper Nix package by
-default.  `torch` and `torchvision` are **not** bundled — they are
-GPU-flavour-specific and must be installed once after entering the shell:
+default.  On first entry, each GPU shell **automatically creates an accelerator-specific
+virtual environment** (`.venv-ai-rocm`, `.venv-ai-cuda`, or `.venv-ai-cuda-legacy`)
+with `--system-site-packages` and installs `torch`/`torchvision` from the matching
+PyTorch wheel index:
 
-```bash
-# CUDA 12.4
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+| Shell | PyTorch wheel index |
+|---|---|
+| `rocm` | `https://download.pytorch.org/whl/rocm6.2` |
+| `cuda` | `https://download.pytorch.org/whl/cu124` |
+| `cuda-legacy` | `https://download.pytorch.org/whl/cu118` |
 
-# CUDA 11.8 (cuda-legacy shell)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-
-# ROCm 6.2
-pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
-```
+The venv is re-used on subsequent shell entries (no re-download). After entering
+the shell, `digitizer train --execute` works without any manual pip steps.
 
 > **AMD APU note (Ryzen 7 8745HS / Radeon 780M):** The `rocm` shell automatically sets
 > `HSA_OVERRIDE_GFX_VERSION=11.0.3` so the ROCm runtime recognises the Hawk Point

@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import builtins
 import re
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -168,7 +170,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertGreaterEqual(max_class_id, 0)
             self.assertLess(max_class_id, nc_value)
 
-    def test_run_training_raises_import_error_for_missing_ai_dependencies(self) -> None:
+    def test_run_training_raises_import_error_for_missing_torch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dataset_dir = Path(tmp) / "synthetic"
             output_dir = Path(tmp) / "runs"
@@ -182,16 +184,53 @@ class DigitizerWorkflowTests(unittest.TestCase):
 
             real_import = builtins.__import__
 
+            def import_without_torch(name: str, globals=None, locals=None, fromlist=(), level: int = 0):
+                if name == "torch":
+                    raise ImportError("No module named 'torch'")
+                return real_import(name, globals, locals, fromlist, level)
+
+            with patch("builtins.__import__", side_effect=import_without_torch):
+                with self.assertRaisesRegex(ImportError, "torch and torchvision"):
+                    digitizer.run_training(
+                        dataset_dir=dataset_dir,
+                        output_dir=output_dir,
+                        epochs=1,
+                        imgsz=640,
+                        weights="yolov8n-seg.pt",
+                        batch=1,
+                        execute=True,
+                    )
+
+    def test_run_training_raises_import_error_for_missing_ai_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_dir = Path(tmp) / "synthetic"
+            output_dir = Path(tmp) / "runs"
+            digitizer.generate_synthetic_dataset(
+                dataset_dir,
+                count=1,
+                seed=3,
+                image_format="png",
+                plot_type="general",
+            )
+
+            real_import = builtins.__import__
+            # Inject a dummy torch module so the preflight torch check passes, then
+            # block only ultralytics to exercise the ultralytics-missing error path.
+            dummy_torch = types.ModuleType("torch")
+
             def import_without_ultralytics(name: str, globals=None, locals=None, fromlist=(), level: int = 0):
+                # Only block ultralytics so the preflight torch check passes and we exercise
+                # the ultralytics-missing error path.
                 if name == "ultralytics":
                     raise ImportError("No module named 'ultralytics'")
+                if name == "torch":
+                    return dummy_torch
                 return real_import(name, globals, locals, fromlist, level)
 
             with patch("builtins.__import__", side_effect=import_without_ultralytics):
                 expected_message = (
-                    "Training requires the optional AI dependencies. Install digitizer with the "
-                    "'ai' extra plus a matching torch/torchvision build for your accelerator "
-                    "(for example: `uv pip install -e \".[ai]\"`), then rerun the command."
+                    "Training requires ultralytics. Install digitizer with the 'ai' extra: "
+                    "`uv pip install -e \".[ai]\"`"
                 )
                 with self.assertRaisesRegex(ImportError, re.escape(expected_message)):
                     digitizer.run_training(
@@ -225,22 +264,35 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertEqual(metadata["axis_detection"]["x_range_source"], "reference")
         self.assertEqual(metadata["axis_detection"]["y_range_source"], "reference")
 
-    def test_gpu_shells_include_ai_stack_by_default(self) -> None:
+    def test_gpu_shells_auto_install_torch_via_venv(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
-        self.assertIn("rocmPkgs = pkgs.pkgsRocm;", flake_text)
+        self.assertIn(
+            "rocmPkgs = if pkgs ? pkgsRocm then pkgs.pkgsRocm else pkgs;",
+            flake_text,
+        )
         self.assertIn("cudaPkgs = if pkgs ? pkgsCuda", flake_text)
         self.assertIn("then pkgs.pkgsCuda else pkgs;", flake_text)
         self.assertIn(
             "aiPythonPkgs = defaultPs: ps:",
             flake_text,
         )
+        # All three GPU shells must use the AI Python packages.
         self.assertEqual(
             flake_text.count("extraPythonPkgs = aiPythonPkgs python.pkgs;"),
             3,
         )
-        self.assertEqual(
-            flake_text.count('echo "AI dependencies are included by default in this shell."'),
-            3,
+        # mkAiVenvHook helper must be present and wired up for each accelerator.
+        self.assertIn("mkAiVenvHook", flake_text)
+        self.assertIn("venv-ai-rocm", flake_text)
+        self.assertIn("venv-ai-cuda", flake_text)
+        self.assertIn("venv-ai-cuda-legacy", flake_text)
+        self.assertIn("rocm6.2", flake_text)
+        self.assertIn("cu124", flake_text)
+        self.assertIn("cu118", flake_text)
+        # Old manual-install hint echoes must be gone.
+        self.assertNotIn(
+            'echo "Install torch/torchvision for your accelerator before training (see README)."',
+            flake_text,
         )
 
     def test_dev_shell_exposes_digitizer_command_wrapper(self) -> None:
