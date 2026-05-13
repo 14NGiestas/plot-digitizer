@@ -15,6 +15,7 @@
         };
         python = pkgs.python312;
         commonSystemLibs = with pkgs; [
+          # `xorg.libxcb` was renamed to `libxcb` in current nixpkgs.
           libxcb
         ];
         packagedCli = python.pkgs.buildPythonApplication {
@@ -153,8 +154,10 @@ from pathlib import Path
 import digitizer
 import sys
 
-module_path = Path(digitizer.__file__).resolve().as_posix()
-sys.exit(0 if "/src/digitizer/" in f"{module_path}/" else 1)
+module_path = Path(digitizer.__file__).resolve()
+parent = module_path.parent
+is_src_layout = parent.name == "digitizer" and parent.parent.name == "src"
+sys.exit(0 if is_src_layout else 1)
 PY
             then
               digitizer_from_src=0

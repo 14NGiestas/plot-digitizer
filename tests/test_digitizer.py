@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -180,7 +181,12 @@ class DigitizerWorkflowTests(unittest.TestCase):
             )
 
             with patch.dict(sys.modules, {"ultralytics": None}):
-                with self.assertRaisesRegex(ImportError, r"optional AI dependencies.*uv pip install -e"):
+                expected_message = (
+                    "Training requires the optional AI dependencies. Install digitizer with the "
+                    "'ai' extra plus a matching torch/torchvision build for your accelerator "
+                    "(for example: `uv pip install -e \".[ai]\"`), then rerun the command."
+                )
+                with self.assertRaisesRegex(ImportError, re.escape(expected_message)):
                     digitizer.run_training(
                         dataset_dir=dataset_dir,
                         output_dir=output_dir,
