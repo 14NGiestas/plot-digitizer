@@ -71,13 +71,13 @@
           scikit-learn
           scipy
         ];
-        aiPythonPkgs = ps:
+        aiPythonPkgs = defaultPs: ps:
           let
             hasShellUltralytics = ps ? ultralytics;
-            hasDefaultUltralytics = python.pkgs ? ultralytics;
+            hasDefaultUltralytics = defaultPs ? ultralytics;
           in
           pkgs.lib.optionals hasShellUltralytics [ ps.ultralytics ]
-          ++ pkgs.lib.optionals (!hasShellUltralytics && hasDefaultUltralytics) [ python.pkgs.ultralytics ];
+          ++ pkgs.lib.optionals (!hasShellUltralytics && hasDefaultUltralytics) [ defaultPs.ultralytics ];
         digitizerShellCommand = pkgs.writeShellScriptBin "digitizer" ''
           exec python -m digitizer "$@"
         '';
@@ -106,7 +106,8 @@
             cudaLegacyPython =
               if cudaLegacyPkgs ? python310 then cudaLegacyPkgs.python310
               else if cudaLegacyPkgs ? python then cudaLegacyPkgs.python
-              else cudaPkgs.python312;
+              else if cudaPkgs ? python312 then cudaPkgs.python312
+              else python;
 
             # --- ROCm / HIP (AMD GPU) ---
             rocmLibs = with rocmPkgs.rocmPackages; [
@@ -135,7 +136,7 @@
             rocm = mkPyShell {
               shellPython = rocmPkgs.python312;
               extraPkgs = rocmLibs;
-              extraPythonPkgs = aiPythonPkgs;
+              extraPythonPkgs = aiPythonPkgs python.pkgs;
               shellHook = ''
                 export ROCM_PATH="${rocmPkgs.rocmPackages.rocm-runtime}"
                 export HIP_PATH="${rocmPkgs.rocmPackages.clr}"
@@ -153,7 +154,7 @@
             cuda = mkPyShell {
               shellPython = cudaPkgs.python312;
               extraPkgs = cudaLibs;
-              extraPythonPkgs = aiPythonPkgs;
+              extraPythonPkgs = aiPythonPkgs python.pkgs;
               shellHook = ''
                 export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
@@ -166,7 +167,7 @@
             cuda-legacy = mkPyShell {
               shellPython = cudaLegacyPython;
               extraPkgs = cudaLegacyLibs;
-              extraPythonPkgs = aiPythonPkgs;
+              extraPythonPkgs = aiPythonPkgs python.pkgs;
               shellHook = ''
                 export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}

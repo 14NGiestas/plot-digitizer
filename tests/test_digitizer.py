@@ -233,11 +233,11 @@ class DigitizerWorkflowTests(unittest.TestCase):
             flake_text,
         )
         self.assertIn(
-            "aiPythonPkgs = ps:",
+            "aiPythonPkgs = defaultPs: ps:",
             flake_text,
         )
         self.assertEqual(
-            flake_text.count("extraPythonPkgs = aiPythonPkgs;"),
+            flake_text.count("extraPythonPkgs = aiPythonPkgs python.pkgs;"),
             3,
         )
         self.assertEqual(
