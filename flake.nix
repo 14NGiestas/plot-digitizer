@@ -128,7 +128,7 @@
               shellHook = ''
                 export ROCM_PATH="${rocmPkgs.rocmPackages.rocm-runtime}"
                 export HIP_PATH="${rocmPkgs.rocmPackages.clr}"
-                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath rocmLibs}:$LD_LIBRARY_PATH"
+                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath rocmLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 # Hawk Point APU (Ryzen 8000-series) integrates Radeon 780M — gfx1103.
                 # HSA_OVERRIDE_GFX_VERSION forces the correct ISA when the ROCm runtime
                 # cannot auto-detect the iGPU (common on newer APUs).
@@ -145,7 +145,7 @@
               extraPythonPkgs = ps: with ps; [ ultralytics ];
               shellHook = ''
                 export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
-                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}:$LD_LIBRARY_PATH"
+                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 echo "CUDA shell ready."
                 echo "AI dependencies are included by default in this shell."
               '';
@@ -158,7 +158,7 @@
               extraPythonPkgs = ps: with ps; [ ultralytics ];
               shellHook = ''
                 export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
-                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}:$LD_LIBRARY_PATH"
+                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 echo "CUDA legacy shell ready (Python 3.12, CUDA 11.8 userspace)."
                 echo "AI dependencies are included by default in this shell."
               '';

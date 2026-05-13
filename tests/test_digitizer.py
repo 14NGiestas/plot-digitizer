@@ -231,11 +231,11 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertIn("cudaPkgs = pkgs.pkgsCuda;", flake_text)
         self.assertEqual(
             flake_text.count("extraPythonPkgs = ps: with ps; [ ultralytics ];"),
-            2,
+            3,
         )
         self.assertEqual(
             flake_text.count('echo "AI dependencies are included by default in this shell."'),
-            2,
+            3,
         )
 
     def test_dev_shell_exposes_digitizer_command_wrapper(self) -> None:
