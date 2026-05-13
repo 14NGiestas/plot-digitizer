@@ -45,11 +45,11 @@ jobs:
           tmpdir="$(mktemp -d)"
           nix run . -- generate --output-dir "$tmpdir/synthetic" --count 1 --seed 1 --plot-type general --image-format png
           nix run . -- train --dataset-dir "$tmpdir/synthetic" --output-dir "$tmpdir/training" --weights yolov8n-seg.pt --epochs 1 --batch 1
-          image_path="$(find "$tmpdir/synthetic/images" -maxdepth 1 -name '*.png' | head -n1)"
+          image_path="$(find "$tmpdir/synthetic/images" -maxdepth 1 -name '*.png' -print -quit)"
           [ -n "$image_path" ] || { echo "No generated image found"; exit 1; }
           nix run . -- digitize "$image_path" --output-dir "$tmpdir/digitized" --x-range 0:10 --y-range 0:1
-          prediction_csv="$(find "$tmpdir/digitized" -maxdepth 1 -name '*.digitized.csv' | head -n1)"
-          truth_csv="$(find "$tmpdir/synthetic/ground_truth" -maxdepth 1 -name '*.csv' | head -n1)"
+          prediction_csv="$(find "$tmpdir/digitized" -maxdepth 1 -name '*.digitized.csv' -print -quit)"
+          truth_csv="$(find "$tmpdir/synthetic/ground_truth" -maxdepth 1 -name '*.csv' -print -quit)"
           [ -n "$prediction_csv" ] || { echo "No digitized CSV found"; exit 1; }
           [ -n "$truth_csv" ] || { echo "No ground-truth CSV found"; exit 1; }
           set +e

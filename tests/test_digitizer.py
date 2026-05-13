@@ -227,20 +227,18 @@ class DigitizerWorkflowTests(unittest.TestCase):
 
     def test_gpu_shell_guidance_mentions_ai_extra_install(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
-        # Nix echo strings escape quotes as \", so normalize that sequence for stable assertions.
-        normalized_flake_text = flake_text.replace('\\"', '"')
-        ai_install = 'uv pip install -e ".[ai]"'
+        ai_install = 'echo "  uv pip install -e \\".[ai]\\""'
         rocm_torch = 'echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2"'
         cuda_torch = 'echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124"'
 
-        self.assertIn(ai_install, normalized_flake_text)
+        self.assertGreaterEqual(flake_text.count(ai_install), 2)
         self.assertIn(rocm_torch, flake_text)
         self.assertIn(cuda_torch, flake_text)
 
-        rocm_torch_index = normalized_flake_text.index(rocm_torch)
-        cuda_torch_index = normalized_flake_text.index(cuda_torch)
-        rocm_ai_index = normalized_flake_text.rfind(ai_install, 0, rocm_torch_index)
-        cuda_ai_index = normalized_flake_text.rfind(ai_install, 0, cuda_torch_index)
+        rocm_torch_index = flake_text.index(rocm_torch)
+        cuda_torch_index = flake_text.index(cuda_torch)
+        rocm_ai_index = flake_text.rfind(ai_install, 0, rocm_torch_index)
+        cuda_ai_index = flake_text.rfind(ai_install, 0, cuda_torch_index)
         self.assertGreaterEqual(rocm_ai_index, 0)
         self.assertGreaterEqual(cuda_ai_index, 0)
         self.assertLess(rocm_ai_index, rocm_torch_index)
