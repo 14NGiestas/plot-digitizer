@@ -39,6 +39,31 @@ jobs:
       - name: Run test suite in Nix dev shell
         run: nix develop --command sh -c "PYTHONPATH=src python -m unittest discover -s tests -p 'test_*.py' -v"
 
+      - name: Run packaged CLI smoke workflow
+        run: |
+          set -euo pipefail
+          tmpdir="$(mktemp -d)"
+          nix run . -- generate --output-dir "$tmpdir/synthetic" --count 1 --seed 1 --plot-type general --image-format png
+          nix run . -- train --dataset-dir "$tmpdir/synthetic" --output-dir "$tmpdir/training" --weights yolov8n-seg.pt --epochs 1 --batch 1
+          image_path="$(find "$tmpdir/synthetic/images" -maxdepth 1 -name '*.png' -print -quit)"
+          [ -n "$image_path" ] || { echo "No generated image found"; exit 1; }
+          nix run . -- digitize "$image_path" --output-dir "$tmpdir/digitized" --x-range 0:10 --y-range 0:1
+          prediction_csv="$(find "$tmpdir/digitized" -maxdepth 1 -name '*.digitized.csv' -print -quit)"
+          truth_csv="$(find "$tmpdir/synthetic/ground_truth" -maxdepth 1 -name '*.csv' -print -quit)"
+          [ -n "$prediction_csv" ] || { echo "No digitized CSV found"; exit 1; }
+          [ -n "$truth_csv" ] || { echo "No ground-truth CSV found"; exit 1; }
+          set +e
+          # `validate` returns 0 when error is under threshold and 1 when above threshold;
+          # both statuses indicate the command executed successfully.
+          validate_output="$(nix run . -- validate --prediction-csv "$prediction_csv" --truth-csv "$truth_csv" 2>&1)"
+          validate_status=$?
+          set -e
+          if [ "$validate_status" -ne 0 ] && [ "$validate_status" -ne 1 ]; then
+            echo "$validate_output"
+            exit "$validate_status"
+          fi
+          printf '%s\n' "$validate_output" | grep -q '"mean_absolute_percentage_error_proxy"'
+
   consumer-test:
     name: consumer-test (${{ matrix.name }})
     needs: nix-test
