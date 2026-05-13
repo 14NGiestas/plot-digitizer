@@ -94,6 +94,8 @@ ERROR_BAR_COUNT_RANGE = (2, 5)
 CURVE_LINEWIDTHS = [0.6, 0.8, 1.0, 1.2, 1.6, 2.0]
 GRID_ENABLED_PROBABILITY = 0.6
 GRID_ALPHA = 0.4
+LOG_X_PROBABILITY = 0.3
+LOG_X_MIN = 0.1
 AxisReferencePair = tuple[tuple[float, float], tuple[float, float]]
 
 
@@ -1114,8 +1116,8 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
     metadata_path = output_dir / "images" / f"plot_{index:04d}.metadata.json"
     ground_truth_path = output_dir / "ground_truth" / f"plot_{index:04d}.csv"
 
-    use_log_x = bool(rng.random() < 0.3)
-    x_min = 0.1 if use_log_x else 0.0
+    use_log_x = bool(rng.random() < LOG_X_PROBABILITY)
+    x_min = LOG_X_MIN if use_log_x else 0.0
     x_range = (x_min, float(rng.uniform(6.0, 12.0)))
     x_values = np.geomspace(*x_range, 480) if use_log_x else np.linspace(*x_range, 480)
     

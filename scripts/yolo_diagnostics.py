@@ -60,6 +60,13 @@ def _make_overlay(image: np.ndarray, gt: np.ndarray, pred: np.ndarray) -> np.nda
     return out
 
 
+def _extract_maps(val_result, name: str) -> list[float]:
+    metric = getattr(val_result, name, None)
+    if metric is None:
+        return []
+    return [float(v) for v in metric.maps]
+
+
 def run_diagnostics(
     model_path: Path,
     data_yaml: Path,
@@ -76,8 +83,8 @@ def run_diagnostics(
     model = YOLO(str(model_path))
 
     val_result = model.val(data=str(data_yaml), split="val", conf=val_conf, iou=iou, plots=True)
-    box_maps = [float(v) for v in val_result.box.maps] if getattr(val_result, "box", None) is not None else []
-    seg_maps = [float(v) for v in val_result.seg.maps] if getattr(val_result, "seg", None) is not None else []
+    box_maps = _extract_maps(val_result, "box")
+    seg_maps = _extract_maps(val_result, "seg")
     metrics = {
         "box_map_per_class": box_maps,
         "seg_map_per_class": seg_maps,
