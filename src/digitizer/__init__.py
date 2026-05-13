@@ -169,7 +169,9 @@ def _remove_small_regions(mask: np.ndarray, min_area: int) -> np.ndarray:
 
 
 def _rectangle(height: int, width: int) -> np.ndarray:
-    return morphology.footprint_rectangle((height, width))
+    if hasattr(morphology, "footprint_rectangle"):
+        return morphology.footprint_rectangle((height, width))
+    return morphology.rectangle(height, width)
 
 
 def configure_logging(verbose: bool) -> None:

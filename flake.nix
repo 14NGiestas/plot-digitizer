@@ -2,7 +2,7 @@
   description = "Nix flake for plot-digitizer";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/50ab793786d9de88ee30ec4e4c24fb4236fc2674"; # pinned intentionally (matches 14NGiestas/mfi lock)
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -15,8 +15,8 @@
         };
         python = pkgs.python312;
         commonSystemLibs = with pkgs; [
-          # `xorg.libxcb` was renamed to `libxcb` in current Nixpkgs.
-          libxcb
+          # In this pinned nixpkgs revision, libxcb is under xorg.
+          xorg.libxcb
         ];
         packagedCli = python.pkgs.buildPythonApplication {
           pname = "digitizer";
