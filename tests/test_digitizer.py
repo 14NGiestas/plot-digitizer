@@ -225,6 +225,10 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertEqual(metadata["axis_detection"]["x_range_source"], "reference")
         self.assertEqual(metadata["axis_detection"]["y_range_source"], "reference")
 
+    def test_gpu_shell_guidance_mentions_ai_extra_install(self) -> None:
+        flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
+        self.assertGreaterEqual(flake_text.count('uv pip install -e \\".[ai]\\"'), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

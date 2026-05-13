@@ -115,7 +115,8 @@
                 # cannot auto-detect the iGPU (common on newer APUs).
                 export HSA_OVERRIDE_GFX_VERSION="11.0.3"
                 echo "ROCm shell ready (gfx1103 / Radeon 780M)."
-                echo "Install PyTorch for ROCm with:"
+                echo "Install AI dependencies in this shell with:"
+                echo "  uv pip install -e \".[ai]\""
                 echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2"
               '';
             };
@@ -129,7 +130,8 @@
                 export CUDA_PATH="${pkgs.cudaPackages.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}:$LD_LIBRARY_PATH"
                 echo "CUDA shell ready."
-                echo "Install PyTorch for CUDA with:"
+                echo "Install AI dependencies in this shell with:"
+                echo "  uv pip install -e \".[ai]\""
                 echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124"
               '';
             };
