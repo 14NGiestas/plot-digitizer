@@ -154,10 +154,12 @@ class DigitizerWorkflowTests(unittest.TestCase):
             )
 
             yaml_text = (dataset_dir / "dataset.yaml").read_text().splitlines()
+            path_value = next(line.split(":", 1)[1].strip() for line in yaml_text if line.startswith("path:"))
             nc_value = int(next(line.split(":", 1)[1].strip() for line in yaml_text if line.startswith("nc:")))
             name_lines = [line for line in yaml_text if line.startswith("  ")]
             names = {int(line.split(":", 1)[0].strip()): line.split(":", 1)[1].strip() for line in name_lines}
 
+            self.assertEqual(Path(path_value), dataset_dir.resolve())
             self.assertEqual(nc_value, len(names))
             self.assertEqual(sorted(names.keys()), list(range(nc_value)))
 
