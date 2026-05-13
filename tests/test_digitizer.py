@@ -227,7 +227,18 @@ class DigitizerWorkflowTests(unittest.TestCase):
 
     def test_gpu_shell_guidance_mentions_ai_extra_install(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
-        self.assertGreaterEqual(flake_text.count('uv pip install -e \\".[ai]\\"'), 2)
+        ai_install = 'uv pip install -e \\".[ai]\\"'
+        rocm_torch = "uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2"
+        cuda_torch = "uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124"
+
+        self.assertIn(ai_install, flake_text)
+        self.assertIn(rocm_torch, flake_text)
+        self.assertIn(cuda_torch, flake_text)
+
+        rocm_torch_index = flake_text.index(rocm_torch)
+        cuda_torch_index = flake_text.index(cuda_torch)
+        self.assertLess(flake_text.rfind(ai_install, 0, rocm_torch_index), rocm_torch_index)
+        self.assertLess(flake_text.rfind(ai_install, 0, cuda_torch_index), cuda_torch_index)
 
 
 if __name__ == "__main__":
