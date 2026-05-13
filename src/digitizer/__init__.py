@@ -1333,9 +1333,12 @@ def run_training(dataset_dir: Path, output_dir: Path, epochs: int, imgsz: int, w
             from ultralytics import YOLO
         except ImportError as exc:  # pragma: no cover - depends on optional dependency setup
             raise ImportError(
-                "Training requires the optional AI dependencies. Install digitizer with the "
-                "'ai' extra plus a matching torch/torchvision build for your accelerator "
-                "(for example: `uv pip install -e \".[ai]\"`), then rerun the command."
+                "Training requires ultralytics and a matching torch/torchvision build. "
+                "If ultralytics is missing, install digitizer with the 'ai' extra "
+                "(`uv pip install -e \".[ai]\"`). Then install torch/torchvision for "
+                "your accelerator (for example CUDA 11.8: "
+                "`uv pip install --index-url https://download.pytorch.org/whl/cu118 "
+                "torch torchvision`), then rerun the command."
             ) from exc
 
         model = YOLO(weights)

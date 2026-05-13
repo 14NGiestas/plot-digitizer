@@ -204,7 +204,8 @@
                 # cannot auto-detect the iGPU (common on newer APUs).
                 export HSA_OVERRIDE_GFX_VERSION="11.0.3"
                 echo "ROCm shell ready (gfx1103 / Radeon 780M)."
-                echo "AI dependencies are included by default in this shell."
+                echo "Ultralytics is included by default in this shell."
+                echo "Install torch/torchvision for your accelerator before training (see README)."
               '';
             };
 
@@ -217,7 +218,8 @@
                 export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 echo "CUDA shell ready."
-                echo "AI dependencies are included by default in this shell."
+                echo "Ultralytics is included by default in this shell."
+                echo "Install torch/torchvision for your accelerator before training (see README)."
               '';
             };
 
@@ -230,7 +232,8 @@
                 export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 echo "CUDA legacy shell ready (Python ${cudaLegacyPythonVersion} from ${cudaLegacyPythonSource}, CUDA 11.8 userspace)."
-                echo "AI dependencies are included by default in this shell."
+                echo "Ultralytics is included by default in this shell."
+                echo "Install torch/torchvision for your accelerator before training (see README)."
               '';
             };
           }

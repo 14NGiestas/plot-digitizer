@@ -189,9 +189,12 @@ class DigitizerWorkflowTests(unittest.TestCase):
 
             with patch("builtins.__import__", side_effect=import_without_ultralytics):
                 expected_message = (
-                    "Training requires the optional AI dependencies. Install digitizer with the "
-                    "'ai' extra plus a matching torch/torchvision build for your accelerator "
-                    "(for example: `uv pip install -e \".[ai]\"`), then rerun the command."
+                    "Training requires ultralytics and a matching torch/torchvision build. "
+                    "If ultralytics is missing, install digitizer with the 'ai' extra "
+                    "(`uv pip install -e \".[ai]\"`). Then install torch/torchvision for "
+                    "your accelerator (for example CUDA 11.8: "
+                    "`uv pip install --index-url https://download.pytorch.org/whl/cu118 "
+                    "torch torchvision`), then rerun the command."
                 )
                 with self.assertRaisesRegex(ImportError, re.escape(expected_message)):
                     digitizer.run_training(
@@ -225,7 +228,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertEqual(metadata["axis_detection"]["x_range_source"], "reference")
         self.assertEqual(metadata["axis_detection"]["y_range_source"], "reference")
 
-    def test_gpu_shells_include_ai_stack_by_default(self) -> None:
+    def test_gpu_shells_include_ultralytics_with_torch_install_hint(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
         self.assertIn("rocmPkgs = pkgs.pkgsRocm;", flake_text)
         self.assertIn("cudaPkgs = if pkgs ? pkgsCuda", flake_text)
@@ -239,7 +242,11 @@ class DigitizerWorkflowTests(unittest.TestCase):
             3,
         )
         self.assertEqual(
-            flake_text.count('echo "AI dependencies are included by default in this shell."'),
+            flake_text.count('echo "Ultralytics is included by default in this shell."'),
+            3,
+        )
+        self.assertEqual(
+            flake_text.count('echo "Install torch/torchvision for your accelerator before training (see README)."'),
             3,
         )
 
