@@ -13,7 +13,47 @@
           inherit system;
           config.allowUnfree = true; # required for CUDA packages
         };
-        python = pkgs.python312;
+        # Nix package overrides that add ultralytics (and its sub-dependency
+        # ultralytics-thop) to whichever Python package set they are applied
+        # to via `python.override { packageOverrides = aiPackageOverrides; }`.
+        # torch / torchvision are intentionally omitted: they are
+        # GPU-flavour-specific and must be installed separately, e.g.
+        #   pip install torch torchvision \
+        #     --index-url https://download.pytorch.org/whl/<rocm|cu124|cu118>
+        aiPackageOverrides = pyfinal: _pyprev: {
+          ultralytics-thop = pyfinal.buildPythonPackage rec {
+            pname = "ultralytics-thop";
+            version = "2.0.19";
+            format = "wheel";
+            src = pkgs.fetchurl {
+              url = "https://files.pythonhosted.org/packages/6a/74/af3e40919305f16968ea3ab88d84b511d710dd281eb5dafaf4897579dd22/ultralytics_thop-2.0.19-py3-none-any.whl";
+              sha256 = "0fd7jb4gk47xkjh0rlf6awd24ss0xy636wim7ynz5w437gmvm051";
+            };
+            propagatedBuildInputs = with pyfinal; [ numpy ];
+            doCheck = false;
+          };
+          ultralytics = pyfinal.buildPythonPackage rec {
+            pname = "ultralytics";
+            version = "8.3.53";
+            format = "wheel";
+            src = pkgs.fetchurl {
+              url = "https://files.pythonhosted.org/packages/5e/12/bdb1a1c0cd48054fd472f28dac65d7ff88b2f34c9097ac80e47fe9257f3b/ultralytics-8.3.53-py3-none-any.whl";
+              sha256 = "1hj88nk0yvlnc4i15i2qpywakydbxnh1dmd8482m41sy38sx02i4";
+            };
+            propagatedBuildInputs = (with pyfinal; [
+              numpy matplotlib opencv4 pillow pyyaml requests scipy
+              tqdm psutil pandas seaborn
+            ]) ++ [
+              pyfinal."py-cpuinfo"
+              pyfinal."ultralytics-thop"
+            ];
+            doCheck = false;
+          };
+        };
+        # Apply the AI overrides to the base Python so that `aiPythonPkgs
+        # python.pkgs` finds ultralytics as a fallback for GPU shells whose
+        # own package set does not carry it.
+        python = pkgs.python312.override { packageOverrides = aiPackageOverrides; };
         commonSystemLibs = with pkgs; [
           # In this pinned nixpkgs revision, libxcb is under xorg.
           xorg.libxcb
@@ -57,6 +97,9 @@
           fi
           export DIGITIZER_SRC_ROOT="$digitizer_src_root"
           export PYTHONPATH="$digitizer_src_root/src''${PYTHONPATH:+:$PYTHONPATH}"
+          # Ensure the dev-shell digitizer wrapper takes precedence over any
+          # nix-profile-installed packaged CLI (e.g. from `nix profile install .`).
+          export PATH="${digitizerShellCommand}/bin''${PATH:+:$PATH}"
         '';
 
         # Core Python packages shared across all shells
@@ -149,7 +192,7 @@
             # The iGPU shares system RAM (DDR5) as both CPU and GPU memory.
             #
             rocm = mkPyShell {
-              shellPython = rocmPkgs.python312;
+              shellPython = rocmPkgs.python312.override { packageOverrides = aiPackageOverrides; };
               extraPkgs = rocmLibs;
               extraPythonPkgs = aiPythonPkgs python.pkgs;
               shellHook = ''
@@ -167,7 +210,7 @@
 
             # NVIDIA GPU — CUDA
             cuda = mkPyShell {
-              shellPython = cudaPkgs.python312;
+              shellPython = cudaPkgs.python312.override { packageOverrides = aiPackageOverrides; };
               extraPkgs = cudaLibs;
               extraPythonPkgs = aiPythonPkgs python.pkgs;
               shellHook = ''
@@ -180,7 +223,7 @@
 
             # NVIDIA GPU — CUDA legacy (driver 470 class via CUDA 11.8 userspace)
             cuda-legacy = mkPyShell {
-              shellPython = cudaLegacyPython;
+              shellPython = cudaLegacyPython.override { packageOverrides = aiPackageOverrides; };
               extraPkgs = cudaLegacyLibs;
               extraPythonPkgs = aiPythonPkgs python.pkgs;
               shellHook = ''
