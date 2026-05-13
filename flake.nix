@@ -153,7 +153,7 @@
 
             # NVIDIA GPU — CUDA legacy (driver 470 class via CUDA 11.8 userspace)
             cuda-legacy = mkPyShell {
-              shellPython = cudaLegacyPkgs.python;
+              shellPython = cudaPkgs.python312;
               extraPkgs = cudaLegacyLibs;
               extraPythonPkgs = ps: with ps; [ ultralytics ];
               shellHook = ''
