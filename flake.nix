@@ -178,9 +178,8 @@ PY
         };
 
         devShells = {
-          # CPU-only shell — works on all platforms, used in CI
-          default  = mkPyShell {};
-          cpu-only = mkPyShell {};
+          # Default shell — CPU-only, works on all platforms, used in CI
+          default = mkPyShell {};
         } // gpuShells;
       }
     );
