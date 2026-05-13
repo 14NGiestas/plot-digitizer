@@ -15,7 +15,7 @@
         };
         python = pkgs.python312;
         commonSystemLibs = with pkgs; [
-          libxcb
+          pkgs.libxcb
         ];
         packagedCli = python.pkgs.buildPythonApplication {
           pname = "digitizer";
@@ -139,7 +139,7 @@
         apps.default = {
           type = "app";
           program = "${pkgs.writeShellScript "digitizer-app" ''
-            if [ -n "''${IN_NIX_SHELL:-}" ] && command -v python >/dev/null 2>&1; then
+            if [ -n "''${IN_NIX_SHELL:-}" ] && command -v python >/dev/null 2>&1 && python -c "import digitizer" >/dev/null 2>&1; then
               exec python -m digitizer "$@"
             fi
             exec ${packagedCli}/bin/digitizer "$@"

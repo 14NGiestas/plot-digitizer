@@ -1332,8 +1332,8 @@ def run_training(dataset_dir: Path, output_dir: Path, epochs: int, imgsz: int, w
         except ImportError as exc:  # pragma: no cover - depends on optional dependency setup
             raise ImportError(
                 "Training requires the optional AI dependencies. Install digitizer with the "
-                "'ai' extra plus a matching torch/torchvision build for your accelerator, "
-                "then rerun the command."
+                "'ai' extra plus a matching torch/torchvision build for your accelerator "
+                "(for example: `uv pip install -e \".[ai]\"`), then rerun the command."
             ) from exc
 
         model = YOLO(weights)
