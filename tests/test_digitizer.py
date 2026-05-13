@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import builtins
+import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -164,6 +167,42 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     max_class_id = max(max_class_id, int(raw_line.split()[0]))
             self.assertGreaterEqual(max_class_id, 0)
             self.assertLess(max_class_id, nc_value)
+
+    def test_run_training_raises_import_error_for_missing_ai_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_dir = Path(tmp) / "synthetic"
+            output_dir = Path(tmp) / "runs"
+            digitizer.generate_synthetic_dataset(
+                dataset_dir,
+                count=1,
+                seed=3,
+                image_format="png",
+                plot_type="general",
+            )
+
+            real_import = builtins.__import__
+
+            def import_without_ultralytics(name: str, globals=None, locals=None, fromlist=(), level: int = 0):
+                if name == "ultralytics":
+                    raise ImportError("No module named 'ultralytics'")
+                return real_import(name, globals, locals, fromlist, level)
+
+            with patch("builtins.__import__", side_effect=import_without_ultralytics):
+                expected_message = (
+                    "Training requires the optional AI dependencies. Install digitizer with the "
+                    "'ai' extra plus a matching torch/torchvision build for your accelerator "
+                    "(for example: `uv pip install -e \".[ai]\"`), then rerun the command."
+                )
+                with self.assertRaisesRegex(ImportError, re.escape(expected_message)):
+                    digitizer.run_training(
+                        dataset_dir=dataset_dir,
+                        output_dir=output_dir,
+                        epochs=1,
+                        imgsz=640,
+                        weights="yolov8n-seg.pt",
+                        batch=1,
+                        execute=True,
+                    )
 
     def test_calibrate_axes_uses_reference_points_for_non_extreme_axis_points(self) -> None:
         image_path = Path("nonexistent.png")

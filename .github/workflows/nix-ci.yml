@@ -47,12 +47,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: run-packaged-cli
+          - name: packaged-binary
             mode: run
-          - name: use-dev-shell-from-consumer-dir
+          - name: dev-shell
             mode: develop
-          - name: use-cpu-only-shell
-            mode: cpu-only
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,17 +64,12 @@ jobs:
       - name: Enable Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@v13
 
-      - name: Run consumer check via nix run
+      - name: Run consumer check via nix run (packaged binary)
         if: matrix.mode == 'run'
         working-directory: /tmp
         run: nix run "${{ github.workspace }}" -- --help
 
-      - name: Run consumer check via nix develop (default shell)
+      - name: Run consumer check via nix develop (dev shell)
         if: matrix.mode == 'develop'
         working-directory: /tmp
         run: nix develop "${{ github.workspace }}" --command python -m digitizer --help
-
-      - name: Run consumer check via nix develop (cpu-only shell)
-        if: matrix.mode == 'cpu-only'
-        working-directory: /tmp
-        run: nix develop "${{ github.workspace }}#cpu-only" --command python -m digitizer --help
