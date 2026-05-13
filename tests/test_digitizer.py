@@ -228,8 +228,8 @@ class DigitizerWorkflowTests(unittest.TestCase):
     def test_gpu_shell_guidance_mentions_ai_extra_install(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
         ai_install = 'uv pip install -e \\".[ai]\\"'
-        rocm_torch = "uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2"
-        cuda_torch = "uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124"
+        rocm_torch = 'echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2"'
+        cuda_torch = 'echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124"'
 
         self.assertIn(ai_install, flake_text)
         self.assertIn(rocm_torch, flake_text)
@@ -237,8 +237,17 @@ class DigitizerWorkflowTests(unittest.TestCase):
 
         rocm_torch_index = flake_text.index(rocm_torch)
         cuda_torch_index = flake_text.index(cuda_torch)
-        self.assertLess(flake_text.rfind(ai_install, 0, rocm_torch_index), rocm_torch_index)
-        self.assertLess(flake_text.rfind(ai_install, 0, cuda_torch_index), cuda_torch_index)
+        rocm_ai_index = flake_text.rfind(ai_install, 0, rocm_torch_index)
+        cuda_ai_index = flake_text.rfind(ai_install, 0, cuda_torch_index)
+        self.assertGreaterEqual(rocm_ai_index, 0)
+        self.assertGreaterEqual(cuda_ai_index, 0)
+        self.assertLess(rocm_ai_index, rocm_torch_index)
+        self.assertLess(cuda_ai_index, cuda_torch_index)
+
+    def test_dev_shell_exposes_digitizer_command_wrapper(self) -> None:
+        flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
+        self.assertIn('writeShellScriptBin "digitizer"', flake_text)
+        self.assertIn('exec python -m digitizer "$@"', flake_text)
 
 
 if __name__ == "__main__":

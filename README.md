@@ -6,7 +6,7 @@ Automatic AI-assisted plot digitizer available as a Python package.
 
 ### Nix (flake)
 
-The flake exposes named dev shells for each accelerator target:
+Use the shell that matches your hardware:
 
 | Shell | Command | Use case |
 |---|---|---|
@@ -14,44 +14,27 @@ The flake exposes named dev shells for each accelerator target:
 | `rocm` | `nix develop .#rocm` | AMD GPU (ROCm/HIP) |
 | `cuda` | `nix develop .#cuda` | NVIDIA GPU (CUDA) |
 
-Enter the shell for your hardware:
+Inside these shells, `digitizer` is already available.
 
 ```bash
-# CPU (default)
-nix develop
-
-# AMD GPU — ROCm
-nix develop .#rocm
-
-# NVIDIA GPU — CUDA
-nix develop .#cuda
+digitizer --help
 ```
 
-Inside any Nix shell, the source checkout is added to `PYTHONPATH`, so you can run the CLI directly:
+One-shot example for CUDA:
 
 ```bash
-python -m digitizer --help
+nix develop .#cuda --command digitizer --help
 ```
 
-For AI training or AI-assisted digitization, create a virtual environment inside the shell and install the matching accelerator build there:
+If you need AI training/inference, install extras in that shell:
 
 ```bash
-# Inside any shell
-uv venv
-source .venv/bin/activate
 uv pip install -e ".[ai]"
-
-# Inside .#rocm
+# ROCm shell:
 uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
-
-# Inside .#cuda
+# CUDA shell:
 uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ```
-
-After activating that environment, `python -m digitizer ...` always uses the active shell or venv interpreter.
-Inside that same dev shell, `nix run . -- ...` reuses the active Python only when `digitizer` resolves from the source checkout.
-Otherwise it falls back to the packaged base app.
-Outside a dev shell, `nix run .` stays base-only and does not include accelerator-specific torch wheels.
 
 > **AMD APU note (Ryzen 7 8745HS / Radeon 780M):** The `rocm` shell automatically sets
 > `HSA_OVERRIDE_GFX_VERSION=11.0.3` so the ROCm runtime recognises the Hawk Point

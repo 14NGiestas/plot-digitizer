@@ -71,11 +71,15 @@
           scikit-learn
           scipy
         ];
+        digitizerShellCommand = pkgs.writeShellScriptBin "digitizer" ''
+          exec python -m digitizer "$@"
+        '';
 
         # Factory: build a dev shell with optional extra system packages and hook
         mkPyShell = { extraPkgs ? [], shellHook ? "" }: pkgs.mkShell {
           packages = [
             (python.withPackages corePythonPkgs)
+            digitizerShellCommand
             pkgs.uv
           ] ++ commonSystemLibs ++ extraPkgs;
           shellHook = shellPythonPathHook + shellHook;
