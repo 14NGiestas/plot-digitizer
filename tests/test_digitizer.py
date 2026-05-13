@@ -180,7 +180,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
             )
 
             with patch.dict(sys.modules, {"ultralytics": None}):
-                with self.assertRaisesRegex(ImportError, "optional AI dependencies"):
+                with self.assertRaisesRegex(ImportError, r"optional AI dependencies.*uv pip install -e"):
                     digitizer.run_training(
                         dataset_dir=dataset_dir,
                         output_dir=output_dir,

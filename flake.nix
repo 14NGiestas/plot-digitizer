@@ -15,7 +15,7 @@
         };
         python = pkgs.python312;
         commonSystemLibs = with pkgs; [
-          pkgs.libxcb
+          libxcb
         ];
         packagedCli = python.pkgs.buildPythonApplication {
           pname = "digitizer";
@@ -148,7 +148,15 @@
 
             if ! command -v python >/dev/null 2>&1; then
               python_available=0
-            elif ! python -c 'from pathlib import Path; import digitizer, sys; sys.exit(0 if "/src/digitizer/" in (Path(digitizer.__file__).resolve().as_posix() + "/") else 1)' >/dev/null 2>&1; then
+            elif ! python >/dev/null 2>&1 <<'PY'
+from pathlib import Path
+import digitizer
+import sys
+
+module_path = Path(digitizer.__file__).resolve().as_posix()
+sys.exit(0 if "/src/digitizer/" in f"{module_path}/" else 1)
+PY
+            then
               digitizer_from_src=0
             fi
 
