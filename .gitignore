@@ -1,38 +1,51 @@
 ```
-# Compiled Python files
-*.pyc
-__pycache__/
+# Nix-specific ignores
+.result
+*.drv
+*.nix-hash
+.nix-gcroots/
+.nix-profile/
 
-# Dependencies
-.venv/
-venv/
-node_modules/
-
-# Build artifacts
-dist/
-build/
-target/
-
-# Logs and temporary files
-*.log
+# Temporary files
 *.tmp
-*.swp
+*~
 
-# Environment files
+# Logs
+*.log
+
+# Environment
 .env
 .env.local
 *.env.*
 
+# Dependencies (if any)
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.egg-info/
+dist/
+build/
+target/
+
 # Editors
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Coverage reports
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
 .coverage
 coverage/
 htmlcov/
 
-# OS specific
-.DS_Store
-Thumbs.db
+# Python specific
+*.pyc
+*.pyo
+*.pyd
+.Python
 ```
