@@ -1299,7 +1299,7 @@ def generate_synthetic_dataset(output_dir: Path, count: int, seed: int, image_fo
     dataset_yaml.write_text(
         "\n".join(
             [
-                f"path: {output_dir}",
+                f"path: {output_dir.resolve()}",
                 "train: images",
                 "val: images",
                 "test: images",
@@ -1317,7 +1317,7 @@ def generate_synthetic_dataset(output_dir: Path, count: int, seed: int, image_fo
 
 def run_training(dataset_dir: Path, output_dir: Path, epochs: int, imgsz: int, weights: str, batch: int, execute: bool) -> dict[str, Any]:
     """Create or execute a YOLO segmentation training job."""
-    dataset_yaml = dataset_dir / "dataset.yaml"
+    dataset_yaml = (dataset_dir / "dataset.yaml").resolve()
     if not dataset_yaml.exists():
         raise FileNotFoundError(f"Dataset config not found: {dataset_yaml}")
     training_plan = {
