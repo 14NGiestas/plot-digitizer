@@ -154,7 +154,7 @@ digitizer train \
   --epochs 253 \
   --imgsz 768 \
   --batch 6 \
-  --hyp-yaml /home/runner/work/plot-digitizer/plot-digitizer/runs/hyp_plot_recall.yaml \
+  --hyp-yaml runs/hyp_plot_recall.yaml \
   --execute
 
 # 4) Continue training from a previous checkpoint (resume)
@@ -178,7 +178,7 @@ digitizer train \
 
 ```bash
 # Run per-class metrics, confidence histogram, and worst-recall overlays
-python /home/runner/work/plot-digitizer/plot-digitizer/scripts/yolo_diagnostics.py \
+python scripts/yolo_diagnostics.py \
   --model training-runs/synthetic_plot_digitizer/weights/best.pt \
   --data-yaml synthetic-data/dataset.yaml \
   --images-dir synthetic-data/images \

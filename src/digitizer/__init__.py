@@ -1111,6 +1111,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
     
     colors = ["tab:red", "tab:blue", "tab:green", "tab:purple", "tab:orange", "tab:cyan"]
     linestyles = ["-", "--", "-.", ":"]
+    # Bias toward thinner strokes to improve recall on faint/low-width curves.
     linewidths = [0.6, 0.8, 1.0, 1.2, 1.6, 2.0]
 
     fig, ax = plt.subplots(figsize=fig_size, dpi=dpi)
@@ -1153,6 +1154,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
             })
     else:
         # General plots
+        # Oversample dense curve scenes to improve recall under overlap.
         if rng.random() < 0.4:
             curve_count = int(rng.integers(4, 7))
         else:
