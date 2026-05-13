@@ -10,8 +10,25 @@ This document provides high-signal instructions for OpenCode agents working on t
 ## Environment Setup & Dependencies
 
 ### Nix (Recommended for Development & CI)
-- **Environment Setup**: Use `nix develop` to enter a development shell with all dependencies.
+- **Environment Setup**: Use `nix develop` to enter the default (CPU) development shell.
+- **Named GPU shells** — pick the one that matches your hardware:
+
+  | Shell | Command | Target |
+  |---|---|---|
+  | `default` / `cpu-only` | `nix develop` | CPU inference, CI |
+  | `rocm` | `nix develop .#rocm` | AMD GPU (ROCm/HIP) |
+  | `cuda` | `nix develop .#cuda` | NVIDIA GPU (CUDA) |
+
 - **Build**: `nix build .#default`
+- **ROCm / AMD APU note**: The `rocm` shell targets gfx1103 (Radeon 780M / Ryzen 8000-series Hawk Point APU).
+  After entering the shell, install PyTorch for ROCm:
+  ```bash
+  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
+  ```
+- **CUDA / NVIDIA note**: After entering `.#cuda`, install the matching wheel:
+  ```bash
+  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+  ```
 
 ### uv (Alternative Python Package Management)
 - If Nix is not used, `uv` is the preferred tool for Python dependency management.

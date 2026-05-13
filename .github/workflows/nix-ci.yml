@@ -30,6 +30,9 @@ jobs:
       - name: Enable Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@v13
 
+      - name: Verify flake outputs evaluate
+        run: nix flake show --all-systems
+
       - name: Build package with Nix
         run: nix build .#default
 
@@ -48,6 +51,8 @@ jobs:
             mode: run
           - name: use-dev-shell-from-consumer-dir
             mode: develop
+          - name: use-cpu-only-shell
+            mode: cpu-only
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,7 +71,12 @@ jobs:
         working-directory: /tmp
         run: nix run "${{ github.workspace }}" -- --help
 
-      - name: Run consumer check via nix develop
+      - name: Run consumer check via nix develop (default shell)
         if: matrix.mode == 'develop'
         working-directory: /tmp
         run: nix develop "${{ github.workspace }}" --command python -m digitizer --help
+
+      - name: Run consumer check via nix develop (cpu-only shell)
+        if: matrix.mode == 'cpu-only'
+        working-directory: /tmp
+        run: nix develop "${{ github.workspace }}#cpu-only" --command python -m digitizer --help

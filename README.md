@@ -6,10 +6,25 @@ Automatic AI-assisted plot digitizer available as a Python package.
 
 ### Nix (flake)
 
-Use the repository flake to enter a development shell with Python and project dependencies:
+The flake exposes named dev shells for each accelerator target:
+
+| Shell | Command | Use case |
+|---|---|---|
+| `default` / `cpu-only` | `nix develop` or `nix develop .#cpu-only` | CPU inference, CI |
+| `rocm` | `nix develop .#rocm` | AMD GPU (ROCm/HIP) |
+| `cuda` | `nix develop .#cuda` | NVIDIA GPU (CUDA) |
+
+Enter the shell for your hardware:
 
 ```bash
+# CPU (default)
 nix develop
+
+# AMD GPU — ROCm
+nix develop .#rocm
+
+# NVIDIA GPU — CUDA
+nix develop .#cuda
 ```
 
 Inside the shell, run the CLI directly from source:
@@ -18,10 +33,25 @@ Inside the shell, run the CLI directly from source:
 python -m digitizer --help
 ```
 
+After entering a GPU shell, install the matching PyTorch wheel with `uv`:
+
+```bash
+# Inside .#rocm
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
+
+# Inside .#cuda
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+```
+
+> **AMD APU note (Ryzen 7 8745HS / Radeon 780M):** The `rocm` shell automatically sets
+> `HSA_OVERRIDE_GFX_VERSION=11.0.3` so the ROCm runtime recognises the Hawk Point
+> integrated GPU (gfx1103 / RDNA3). The iGPU shares the system DDR5 RAM as unified
+> GPU memory (16 GB visible as GTT).
+
 To run the test suite in a Nix environment:
 
 ```bash
-nix develop --command python -m unittest discover -s tests -p 'test_*.py' -v
+nix develop --command sh -c "PYTHONPATH=src python -m unittest discover -s tests -p 'test_*.py' -v"
 ```
 
 To run the packaged app through the flake:
