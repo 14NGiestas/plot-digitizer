@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -164,6 +166,30 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     max_class_id = max(max_class_id, int(raw_line.split()[0]))
             self.assertGreaterEqual(max_class_id, 0)
             self.assertLess(max_class_id, nc_value)
+
+    def test_run_training_reports_missing_ai_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_dir = Path(tmp) / "synthetic"
+            output_dir = Path(tmp) / "runs"
+            digitizer.generate_synthetic_dataset(
+                dataset_dir,
+                count=1,
+                seed=3,
+                image_format="png",
+                plot_type="general",
+            )
+
+            with patch.dict(sys.modules, {"ultralytics": None}):
+                with self.assertRaisesRegex(ImportError, "optional AI dependencies"):
+                    digitizer.run_training(
+                        dataset_dir=dataset_dir,
+                        output_dir=output_dir,
+                        epochs=1,
+                        imgsz=640,
+                        weights="yolov8n-seg.pt",
+                        batch=1,
+                        execute=True,
+                    )
 
     def test_calibrate_axes_uses_reference_points_for_non_extreme_axis_points(self) -> None:
         image_path = Path("nonexistent.png")

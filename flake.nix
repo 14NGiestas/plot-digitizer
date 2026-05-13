@@ -15,8 +15,46 @@
         };
         python = pkgs.python312;
         commonSystemLibs = with pkgs; [
-          xorg.libxcb
+          libxcb
         ];
+        packagedCli = python.pkgs.buildPythonApplication {
+          pname = "digitizer";
+          version = "0.1.0";
+          format = "pyproject";
+          src = self;
+
+          nativeBuildInputs = with python.pkgs; [
+            hatchling
+          ];
+
+          buildInputs = commonSystemLibs;
+
+          propagatedBuildInputs = with python.pkgs; [
+            matplotlib
+            numpy
+            opencv4
+            pandas
+            scikit-image
+            scikit-learn
+            scipy
+          ];
+
+          pythonRemoveDeps = [
+            "opencv-python"
+          ];
+
+          doCheck = true;
+          checkPhase = ''
+            ${python.interpreter} -m unittest discover -s tests -p 'test_*.py' -v
+          '';
+        };
+        shellPythonPathHook = ''
+          if [ -d "$PWD/src/digitizer" ]; then
+            export PYTHONPATH="$PWD/src''${PYTHONPATH:+:$PYTHONPATH}"
+          else
+            export PYTHONPATH="${self}/src''${PYTHONPATH:+:$PYTHONPATH}"
+          fi
+        '';
 
         # Core Python packages shared across all shells
         corePythonPkgs = ps: with ps; [
@@ -29,7 +67,6 @@
           scikit-image
           scikit-learn
           scipy
-          ultralytics
         ];
 
         # Factory: build a dev shell with optional extra system packages and hook
@@ -38,7 +75,7 @@
             (python.withPackages corePythonPkgs)
             pkgs.uv
           ] ++ commonSystemLibs ++ extraPkgs;
-          inherit shellHook;
+          shellHook = shellPythonPathHook + shellHook;
         };
 
         # GPU-specific shells are only meaningful on Linux
@@ -97,37 +134,16 @@
         );
       in
       {
-        packages.default = python.pkgs.buildPythonApplication {
-          pname = "digitizer";
-          version = "0.1.0";
-          format = "pyproject";
-          src = self;
+        packages.default = packagedCli;
 
-          nativeBuildInputs = with python.pkgs; [
-            hatchling
-          ];
-
-          buildInputs = commonSystemLibs;
-
-          propagatedBuildInputs = with python.pkgs; [
-            matplotlib
-            numpy
-            opencv4
-            pandas
-            scikit-image
-            scikit-learn
-            scipy
-            ultralytics
-          ];
-
-          pythonRemoveDeps = [
-            "opencv-python"
-          ];
-
-          doCheck = true;
-          checkPhase = ''
-            ${python.interpreter} -m unittest discover -s tests -p 'test_*.py' -v
-          '';
+        apps.default = {
+          type = "app";
+          program = "${pkgs.writeShellScript "digitizer-app" ''
+            if [ -n "''${IN_NIX_SHELL:-}" ] && command -v python >/dev/null 2>&1; then
+              exec python -m digitizer "$@"
+            fi
+            exec ${packagedCli}/bin/digitizer "$@"
+          ''}";
         };
 
         devShells = {

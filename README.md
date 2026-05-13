@@ -27,21 +27,28 @@ nix develop .#rocm
 nix develop .#cuda
 ```
 
-Inside the shell, run the CLI directly from source:
+Inside any Nix shell, the source checkout is added to `PYTHONPATH`, so you can run the CLI directly:
 
 ```bash
 python -m digitizer --help
 ```
 
-After entering a GPU shell, install the matching PyTorch wheel with `uv`:
+For AI training or AI-assisted digitization, create a virtual environment inside the shell and install the matching accelerator build there:
 
 ```bash
+# Inside any shell
+uv venv
+source .venv/bin/activate
+uv pip install -e ".[ai]"
+
 # Inside .#rocm
 uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
 
 # Inside .#cuda
 uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ```
+
+Use `python -m digitizer ...` (or `nix run . -- ...` from inside the active shell) after activating that environment. The packaged `nix run .` app outside a dev shell stays base-only and does not include accelerator-specific torch wheels.
 
 > **AMD APU note (Ryzen 7 8745HS / Radeon 780M):** The `rocm` shell automatically sets
 > `HSA_OVERRIDE_GFX_VERSION=11.0.3` so the ROCm runtime recognises the Hawk Point
