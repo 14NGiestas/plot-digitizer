@@ -94,7 +94,7 @@
         gpuShells = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           let
             rocmPkgs = pkgs.pkgsRocm;
-            cudaPkgs = pkgs.pkgsCuda;
+            cudaPkgs = if pkgs ? pkgsCuda then pkgs.pkgsCuda else pkgs;
             cudaLegacyPkgs = pkgs.cudaPackages_11_8;
 
             # --- ROCm / HIP (AMD GPU) ---
