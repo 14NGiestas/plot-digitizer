@@ -142,7 +142,17 @@
             # Inside a dev shell, prefer that shell's Python only when it resolves
             # digitizer from the src-layout checkout/store path rather than some
             # unrelated global installation.
-            if [ -n "''${IN_NIX_SHELL:-}" ] && command -v python >/dev/null 2>&1 && python -c 'from pathlib import Path; import digitizer, sys; sys.exit(0 if "/src/digitizer/" in (Path(digitizer.__file__).resolve().as_posix() + "/") else 1)' >/dev/null 2>&1; then
+            in_nix_shell="''${IN_NIX_SHELL:-}"
+            python_available=1
+            digitizer_from_src=1
+
+            if ! command -v python >/dev/null 2>&1; then
+              python_available=0
+            elif ! python -c 'from pathlib import Path; import digitizer, sys; sys.exit(0 if "/src/digitizer/" in (Path(digitizer.__file__).resolve().as_posix() + "/") else 1)' >/dev/null 2>&1; then
+              digitizer_from_src=0
+            fi
+
+            if [ -n "$in_nix_shell" ] && [ "$python_available" -eq 1 ] && [ "$digitizer_from_src" -eq 1 ]; then
               exec python -m digitizer "$@"
             fi
             exec ${packagedCli}/bin/digitizer "$@"
