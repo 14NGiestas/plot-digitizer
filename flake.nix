@@ -95,6 +95,7 @@
           let
             rocmPkgs = pkgs.pkgsRocm;
             cudaPkgs = pkgs.pkgsCuda;
+            cudaLegacyPkgs = pkgs.cudaPackages_11_8;
 
             # --- ROCm / HIP (AMD GPU) ---
             rocmLibs = with rocmPkgs.rocmPackages; [
@@ -105,6 +106,12 @@
 
             # --- CUDA (NVIDIA GPU) ---
             cudaLibs = with cudaPkgs.cudaPackages; [
+              cuda_cudart  # CUDA runtime
+              libcublas    # cuBLAS
+            ];
+
+            # --- CUDA legacy (driver 470 class via CUDA 11.8) ---
+            cudaLegacyLibs = with cudaLegacyPkgs; [
               cuda_cudart  # CUDA runtime
               libcublas    # cuBLAS
             ];
@@ -121,7 +128,7 @@
               shellHook = ''
                 export ROCM_PATH="${rocmPkgs.rocmPackages.rocm-runtime}"
                 export HIP_PATH="${rocmPkgs.rocmPackages.clr}"
-                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath rocmLibs}:$LD_LIBRARY_PATH"
+                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath rocmLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 # Hawk Point APU (Ryzen 8000-series) integrates Radeon 780M — gfx1103.
                 # HSA_OVERRIDE_GFX_VERSION forces the correct ISA when the ROCm runtime
                 # cannot auto-detect the iGPU (common on newer APUs).
@@ -138,21 +145,21 @@
               extraPythonPkgs = ps: with ps; [ ultralytics ];
               shellHook = ''
                 export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
-                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}:$LD_LIBRARY_PATH"
+                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 echo "CUDA shell ready."
                 echo "AI dependencies are included by default in this shell."
               '';
             };
 
-            # NVIDIA GPU — CUDA legacy (driver 470 / CUDA 11.4 class systems)
+            # NVIDIA GPU — CUDA legacy (driver 470 class via CUDA 11.8 userspace)
             cuda-legacy = mkPyShell {
-              shellPython = cudaPkgs.python312;
-              extraPkgs = cudaLibs;
+              shellPython = python;
+              extraPkgs = cudaLegacyLibs;
               extraPythonPkgs = ps: with ps; [ ultralytics ];
               shellHook = ''
-                export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
-                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}:$LD_LIBRARY_PATH"
-                echo "CUDA legacy shell ready (Python 3.10)."
+                export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
+                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+                echo "CUDA legacy shell ready (Python 3.12, CUDA 11.8 userspace)."
                 echo "AI dependencies are included by default in this shell."
               '';
             };

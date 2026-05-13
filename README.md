@@ -13,7 +13,7 @@ Use the shell that matches your hardware:
 | `default` / `cpu-only` | `nix develop` or `nix develop .#cpu-only` | CPU inference, CI |
 | `rocm` | `nix develop .#rocm` | AMD GPU (ROCm/HIP) |
 | `cuda` | `nix develop .#cuda` | NVIDIA GPU (CUDA) |
-| `cuda-legacy` | `nix develop .#cuda-legacy` | NVIDIA legacy driver stack (470 / CUDA 11.4) |
+| `cuda-legacy` | `nix develop .#cuda-legacy` | NVIDIA legacy driver stack (470-class / CUDA 11.8 userspace) |
 
 Inside these shells, `digitizer` is already available. The GPU shells (`rocm`,
 `cuda`, and `cuda-legacy`) include the AI stack by default (`ultralytics` plus
@@ -29,7 +29,7 @@ One-shot example for CUDA:
 nix develop .#cuda --command digitizer --help
 ```
 
-Legacy NVIDIA driver example (470 / CUDA 11.4):
+Legacy NVIDIA driver example (470-class / CUDA 11.8 userspace):
 
 ```bash
 nix develop .#cuda-legacy
