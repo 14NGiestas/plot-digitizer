@@ -153,13 +153,13 @@
 
             # NVIDIA GPU — CUDA legacy (driver 470 class via CUDA 11.8 userspace)
             cuda-legacy = mkPyShell {
-              shellPython = cudaLegacyPkgs.python310;
+              shellPython = cudaLegacyPkgs.python;
               extraPkgs = cudaLegacyLibs;
               extraPythonPkgs = ps: with ps; [ ultralytics ];
               shellHook = ''
                 export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-                echo "CUDA legacy shell ready (Python 3.10, CUDA 11.8 userspace)."
+                echo "CUDA legacy shell ready (CUDA 11.8 userspace)."
                 echo "AI dependencies are included by default in this shell."
               '';
             };

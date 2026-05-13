@@ -28,3 +28,6 @@ jobs:
         run: |
           nix --version
           nix flake --help >/dev/null
+
+      - name: Prefetch flake-utils input
+        run: nix flake prefetch github:numtide/flake-utils/11707dc2f618dd54ca8739b309ec4fc024de578b >/dev/null
