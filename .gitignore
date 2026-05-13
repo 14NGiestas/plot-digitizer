@@ -1,5 +1,5 @@
-```
 # Nix-specific ignores
+result
 .result
 *.drv
 *.nix-hash
@@ -49,4 +49,3 @@ htmlcov/
 *.pyo
 *.pyd
 .Python
-```
