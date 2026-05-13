@@ -144,8 +144,12 @@ class AxisCalibration:
         x_right = float(self.x_pixel_max if self.x_pixel_max is not None else plot_box.right)
         y_bottom = float(self.y_pixel_bottom if self.y_pixel_bottom is not None else plot_box.bottom)
         y_top = float(self.y_pixel_top if self.y_pixel_top is not None else plot_box.top)
-        x_span = max(np.finfo(float).eps, x_right - x_left)
-        y_span = max(np.finfo(float).eps, y_bottom - y_top)
+        x_span = x_right - x_left
+        y_span = y_bottom - y_top
+        if x_span <= 0:
+            raise ValueError("X-axis calibration pixel bounds are invalid (right must be greater than left).")
+        if y_span <= 0:
+            raise ValueError("Y-axis calibration pixel bounds are invalid (bottom must be greater than top).")
         x_norm = np.clip((x_px - x_left) / x_span, 0.0, 1.0)
         y_norm = np.clip((y_bottom - y_px) / y_span, 0.0, 1.0)
         if self.invert_y:
@@ -1291,8 +1295,14 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         x_pos = rng.uniform(0.1, 0.9)
         vbar_width = rng.uniform(1.0, 3.0)
         style = {"linewidth": vbar_width, "linestyle": "-"}
-        vbar_x = _x_norm_to_data(x_pos)
-        ax.axvline(x=vbar_x, ymin=0, ymax=1, color="black", linewidth=vbar_width, linestyle=style["linestyle"])
+        ax.axvline(
+            x=_x_norm_to_data(x_pos),
+            ymin=0,
+            ymax=1,
+            color="black",
+            linewidth=vbar_width,
+            linestyle=style["linestyle"],
+        )
         mask = _render_vbar_mask(fig_size, dpi, x_pos, y_range, vbar_width, style)
         polygon = _mask_to_yolo_polygon(mask)
         if polygon:

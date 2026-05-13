@@ -325,12 +325,22 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertIsNotNone(metadata["axis_anchor_pixels"])
         x_anchor_left, x_anchor_right = metadata["axis_anchor_pixels"]["x"]
         y_anchor_bottom, y_anchor_top = metadata["axis_anchor_pixels"]["y"]
-        x_anchor_real, _ = calibration.pixel_to_real(np.array([x_anchor_left, x_anchor_right]), np.array([y_anchor_bottom, y_anchor_bottom]), plot_box)
-        _, y_anchor_real = calibration.pixel_to_real(np.array([x_anchor_left, x_anchor_left]), np.array([y_anchor_bottom, y_anchor_top]), plot_box)
+        x_anchor_real, y_coords_at_x_anchor = calibration.pixel_to_real(
+            np.array([x_anchor_left, x_anchor_right]),
+            np.array([y_anchor_bottom, y_anchor_bottom]),
+            plot_box,
+        )
+        x_coords_at_y_anchor, y_anchor_real = calibration.pixel_to_real(
+            np.array([x_anchor_left, x_anchor_left]),
+            np.array([y_anchor_bottom, y_anchor_top]),
+            plot_box,
+        )
         self.assertAlmostEqual(float(x_anchor_real[0]), 0.0, places=4)
         self.assertAlmostEqual(float(x_anchor_real[1]), 10.0, places=4)
         self.assertAlmostEqual(float(y_anchor_real[0]), 0.0, places=4)
         self.assertAlmostEqual(float(y_anchor_real[1]), 100.0, places=4)
+        self.assertTrue(np.all(np.isfinite(y_coords_at_x_anchor)))
+        self.assertTrue(np.all(np.isfinite(x_coords_at_y_anchor)))
         self.assertEqual(calibration.x_pixel_min, x_anchor_left)
         self.assertEqual(calibration.x_pixel_max, x_anchor_right)
         self.assertEqual(calibration.y_pixel_bottom, y_anchor_bottom)
@@ -346,7 +356,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
             solid_mask = np.zeros((120, 120), dtype=bool)
             solid_mask[20:100, 30:90] = True
             with (
-                patch("digitizer._apply_degradation_filters"),
+                patch("digitizer._apply_degradation_filters", return_value=None),
                 patch("digitizer._render_curve_mask", return_value=solid_mask),
                 patch("digitizer._render_vbar_mask", return_value=solid_mask),
                 patch("digitizer._render_hbar_mask", return_value=solid_mask),
