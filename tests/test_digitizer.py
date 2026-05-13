@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
+import builtins
 import re
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -180,7 +180,14 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 plot_type="general",
             )
 
-            with patch.dict(sys.modules, {"ultralytics": None}):
+            real_import = builtins.__import__
+
+            def import_without_ultralytics(name: str, globals=None, locals=None, fromlist=(), level: int = 0):
+                if name == "ultralytics":
+                    raise ImportError("No module named 'ultralytics'")
+                return real_import(name, globals, locals, fromlist, level)
+
+            with patch("builtins.__import__", side_effect=import_without_ultralytics):
                 expected_message = (
                     "Training requires the optional AI dependencies. Install digitizer with the "
                     "'ai' extra plus a matching torch/torchvision build for your accelerator "

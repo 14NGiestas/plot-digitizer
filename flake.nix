@@ -51,10 +51,12 @@
         };
         shellPythonPathHook = ''
           if [ -d "$PWD/src/digitizer" ]; then
-            export PYTHONPATH="$PWD/src''${PYTHONPATH:+:$PYTHONPATH}"
+            digitizer_src_root="$PWD"
           else
-            export PYTHONPATH="${self}/src''${PYTHONPATH:+:$PYTHONPATH}"
+            digitizer_src_root="${self}"
           fi
+          export DIGITIZER_SRC_ROOT="$digitizer_src_root"
+          export PYTHONPATH="$digitizer_src_root/src''${PYTHONPATH:+:$PYTHONPATH}"
         '';
 
         # Core Python packages shared across all shells
@@ -150,13 +152,18 @@
             if ! command -v python >/dev/null 2>&1; then
               python_available=0
             elif ! python >/dev/null 2>&1 <<'PY'
+import os
 from pathlib import Path
 import digitizer
 import sys
 
+source_root = os.environ.get("DIGITIZER_SRC_ROOT")
+if not source_root:
+    sys.exit(1)
+
 module_path = Path(digitizer.__file__).resolve()
-parent = module_path.parent
-is_src_layout = parent.name == "digitizer" and parent.parent.name == "src"
+src_package_dir = (Path(source_root) / "src" / "digitizer").resolve()
+is_src_layout = src_package_dir in module_path.parents
 sys.exit(0 if is_src_layout else 1)
 PY
             then
