@@ -57,6 +57,9 @@
           fi
           export DIGITIZER_SRC_ROOT="$digitizer_src_root"
           export PYTHONPATH="$digitizer_src_root/src''${PYTHONPATH:+:$PYTHONPATH}"
+          # Ensure the dev-shell digitizer wrapper takes precedence over any
+          # nix-profile-installed packaged CLI (e.g. from `nix profile install .`).
+          export PATH="${digitizerShellCommand}/bin''${PATH:+:$PATH}"
         '';
 
         # Core Python packages shared across all shells
@@ -84,6 +87,28 @@
           ++ pkgs.lib.optionals (!hasShellUltralytics && hasDefaultUltralytics) [ defaultPs.ultralytics ];
         digitizerShellCommand = pkgs.writeShellScriptBin "digitizer" ''
           exec python -m digitizer "$@"
+        '';
+
+        # Bootstrap hook for GPU dev shells: install ultralytics into a
+        # project-local venv ($DIGITIZER_SRC_ROOT/.venv-ai) on first use and
+        # append its site-packages to PYTHONPATH.  nix-provided packages
+        # (numpy, scipy, etc.) remain first in the path so they take
+        # precedence over any pip-installed duplicates.
+        aiVenvHook = ''
+          _pld_ai_venv="$DIGITIZER_SRC_ROOT/.venv-ai"
+          _pld_py_ver=$(python -c "import sys; v=sys.version_info; print(str(v.major)+'.'+str(v.minor))")
+          if [ ! -d "$_pld_ai_venv" ]; then
+            uv venv "$_pld_ai_venv" >/dev/null 2>&1 \
+              || echo "Warning: could not create AI venv at $_pld_ai_venv (check uv is available and the directory is writable)" >&2
+          fi
+          if [ -d "$_pld_ai_venv" ] && ! "$_pld_ai_venv/bin/python" -c "import ultralytics" 2>/dev/null; then
+            uv pip install --quiet --python "$_pld_ai_venv" "ultralytics>=8.3,<8.4" \
+              || echo "Warning: could not auto-install ultralytics (offline?). Run: uv pip install --python $DIGITIZER_SRC_ROOT/.venv-ai 'ultralytics>=8.3,<8.4'" >&2
+          fi
+          if [ -d "$_pld_ai_venv" ]; then
+            export PYTHONPATH="''${PYTHONPATH:+$PYTHONPATH:}$_pld_ai_venv/lib/python$_pld_py_ver/site-packages"
+          fi
+          unset _pld_ai_venv _pld_py_ver
         '';
 
         # Factory: build a dev shell with optional extra system packages, Python packages, and hook
@@ -152,7 +177,7 @@
               shellPython = rocmPkgs.python312;
               extraPkgs = rocmLibs;
               extraPythonPkgs = aiPythonPkgs python.pkgs;
-              shellHook = ''
+              shellHook = aiVenvHook + ''
                 export ROCM_PATH="${rocmPkgs.rocmPackages.rocm-runtime}"
                 export HIP_PATH="${rocmPkgs.rocmPackages.clr}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath rocmLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
@@ -170,7 +195,7 @@
               shellPython = cudaPkgs.python312;
               extraPkgs = cudaLibs;
               extraPythonPkgs = aiPythonPkgs python.pkgs;
-              shellHook = ''
+              shellHook = aiVenvHook + ''
                 export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 echo "CUDA shell ready."
@@ -183,7 +208,7 @@
               shellPython = cudaLegacyPython;
               extraPkgs = cudaLegacyLibs;
               extraPythonPkgs = aiPythonPkgs python.pkgs;
-              shellHook = ''
+              shellHook = aiVenvHook + ''
                 export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 echo "CUDA legacy shell ready (Python ${cudaLegacyPythonVersion} from ${cudaLegacyPythonSource}, CUDA 11.8 userspace)."
