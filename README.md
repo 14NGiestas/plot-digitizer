@@ -13,6 +13,7 @@ Use the shell that matches your hardware:
 | `default` / `cpu-only` | `nix develop` or `nix develop .#cpu-only` | CPU inference, CI |
 | `rocm` | `nix develop .#rocm` | AMD GPU (ROCm/HIP) |
 | `cuda` | `nix develop .#cuda` | NVIDIA GPU (CUDA) |
+| `cuda-legacy` | `nix develop .#cuda-legacy` | NVIDIA legacy driver stack (470 / CUDA 11.4) |
 
 Inside these shells, `digitizer` is already available. The GPU shells also include
 the AI stack by default (`ultralytics` plus accelerator-matched `torch`/`torchvision`).
@@ -25,6 +26,16 @@ One-shot example for CUDA:
 
 ```bash
 nix develop .#cuda --command digitizer --help
+```
+
+Legacy NVIDIA driver example (470 / CUDA 11.4):
+
+```bash
+nix develop .#cuda-legacy
+uv pip install --index-url https://download.pytorch.org/whl/cu113 \
+  "torch==1.12.1+cu113" "torchvision==0.13.1+cu113"
+uv pip install -e ".[ai]"
+digitizer --help
 ```
 
 If you need AI training/inference:

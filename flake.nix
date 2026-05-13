@@ -143,6 +143,19 @@
                 echo "AI dependencies are included by default in this shell."
               '';
             };
+
+            # NVIDIA GPU — CUDA legacy (driver 470 / CUDA 11.4 class systems)
+            cuda-legacy = mkPyShell {
+              shellPython = pkgs.python310;
+              shellHook = ''
+                echo "CUDA legacy shell ready (Python 3.10)."
+                echo "For driver 470/CUDA 11.4 hosts, install a compatible torch wheel in-shell:"
+                echo "  uv pip install --index-url https://download.pytorch.org/whl/cu113 \\"
+                echo "    'torch==1.12.1+cu113' 'torchvision==0.13.1+cu113'"
+                echo "Then install AI extras if needed:"
+                echo "  uv pip install -e '.[ai]'"
+              '';
+            };
           }
         );
       in
