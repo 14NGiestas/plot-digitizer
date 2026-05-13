@@ -1,0 +1,78 @@
+{
+  "image": "synthetic-data/images/plot_0000.png",
+  "x_range": [
+    0.0,
+    8.633270638512315
+  ],
+  "y_range": [
+    -2.863911203811032,
+    1.8787759992472215
+  ],
+  "x_scale": "linear",
+  "y_scale": "linear",
+  "invert_y": false,
+  "plot_box": {
+    "left": 90,
+    "top": 50,
+    "right": 818,
+    "bottom": 507
+  },
+  "plot_type": "general",
+  "curves": [
+    {
+      "dataset_id": "dataset_0",
+      "curve_type": "sin",
+      "color": "tab:red",
+      "linestyle": "-",
+      "linewidth": 2.0
+    },
+    {
+      "dataset_id": "dataset_1",
+      "curve_type": "sin",
+      "color": "tab:blue",
+      "linestyle": "--",
+      "linewidth": 2.4
+    },
+    {
+      "dataset_id": "dataset_2",
+      "curve_type": "poly",
+      "color": "tab:green",
+      "linestyle": "-.",
+      "linewidth": 2.2
+    }
+  ],
+  "annotations": [
+    {
+      "type": "vbar",
+      "class_id": 1,
+      "x_pos": 0.3967298572333354,
+      "description": "high_symmetry_point_0"
+    },
+    {
+      "type": "vbar",
+      "class_id": 1,
+      "x_pos": 0.7496983689496474,
+      "description": "high_symmetry_point_1"
+    },
+    {
+      "type": "vbar",
+      "class_id": 1,
+      "x_pos": 0.6892584744925865,
+      "description": "high_symmetry_point_2"
+    },
+    {
+      "type": "arrow",
+      "class_id": 3,
+      "start": [
+        0.31915019811878487,
+        0.5760949896705252
+      ],
+      "end": [
+        0.648361880115242,
+        0.736812732120689
+      ],
+      "description": "annotation_arrow_0"
+    }
+  ],
+  "ground_truth_csv": "synthetic-data/ground_truth/plot_0000.csv"
+}
