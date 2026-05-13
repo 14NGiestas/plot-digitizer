@@ -75,10 +75,15 @@
           exec python -m digitizer "$@"
         '';
 
-        # Factory: build a dev shell with optional extra system packages and hook
-        mkPyShell = { extraPkgs ? [], shellHook ? "" }: pkgs.mkShell {
+        # Factory: build a dev shell with optional extra system packages, Python packages, and hook
+        mkPyShell = {
+          shellPython ? python,
+          extraPkgs ? [],
+          extraPythonPkgs ? (_: []),
+          shellHook ? "",
+        }: pkgs.mkShell {
           packages = [
-            (python.withPackages corePythonPkgs)
+            (shellPython.withPackages (ps: corePythonPkgs ps ++ extraPythonPkgs ps))
             digitizerShellCommand
             pkgs.uv
           ] ++ commonSystemLibs ++ extraPkgs;
@@ -88,15 +93,18 @@
         # GPU-specific shells are only meaningful on Linux
         gpuShells = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           let
+            rocmPkgs = pkgs.pkgsRocm;
+            cudaPkgs = pkgs.pkgsCuda;
+
             # --- ROCm / HIP (AMD GPU) ---
-            rocmLibs = with pkgs.rocmPackages; [
+            rocmLibs = with rocmPkgs.rocmPackages; [
               rocm-runtime  # HSA runtime  (libhsa-runtime64.so)
               clr           # HIP + OpenCL (libamdhip64.so)
               rocblas       # ROCm BLAS
             ];
 
             # --- CUDA (NVIDIA GPU) ---
-            cudaLibs = with pkgs.cudaPackages; [
+            cudaLibs = with cudaPkgs.cudaPackages; [
               cuda_cudart  # CUDA runtime
               libcublas    # cuBLAS
             ];
@@ -106,37 +114,33 @@
             # Tested on: Ryzen 7 8745HS (Hawk Point) with Radeon 780M iGPU (gfx1103 / RDNA3).
             # The iGPU shares system RAM (DDR5) as both CPU and GPU memory.
             #
-            # After entering this shell, install PyTorch for ROCm via:
-            #   uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
             rocm = mkPyShell {
+              shellPython = rocmPkgs.python312;
               extraPkgs = rocmLibs;
+              extraPythonPkgs = ps: with ps; [ ultralytics ];
               shellHook = ''
-                export ROCM_PATH="${pkgs.rocmPackages.rocm-runtime}"
-                export HIP_PATH="${pkgs.rocmPackages.clr}"
+                export ROCM_PATH="${rocmPkgs.rocmPackages.rocm-runtime}"
+                export HIP_PATH="${rocmPkgs.rocmPackages.clr}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath rocmLibs}:$LD_LIBRARY_PATH"
                 # Hawk Point APU (Ryzen 8000-series) integrates Radeon 780M — gfx1103.
                 # HSA_OVERRIDE_GFX_VERSION forces the correct ISA when the ROCm runtime
                 # cannot auto-detect the iGPU (common on newer APUs).
                 export HSA_OVERRIDE_GFX_VERSION="11.0.3"
                 echo "ROCm shell ready (gfx1103 / Radeon 780M)."
-                echo "Install AI dependencies in this shell with:"
-                echo "  uv pip install -e \".[ai]\""
-                echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2"
+                echo "AI dependencies are included by default in this shell."
               '';
             };
 
             # NVIDIA GPU — CUDA
-            # After entering this shell, install PyTorch for CUDA via:
-            #   uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
             cuda = mkPyShell {
+              shellPython = cudaPkgs.python312;
               extraPkgs = cudaLibs;
+              extraPythonPkgs = ps: with ps; [ ultralytics ];
               shellHook = ''
-                export CUDA_PATH="${pkgs.cudaPackages.cuda_cudart}"
+                export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}:$LD_LIBRARY_PATH"
                 echo "CUDA shell ready."
-                echo "Install AI dependencies in this shell with:"
-                echo "  uv pip install -e \".[ai]\""
-                echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124"
+                echo "AI dependencies are included by default in this shell."
               '';
             };
           }

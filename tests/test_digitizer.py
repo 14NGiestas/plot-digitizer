@@ -225,24 +225,18 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertEqual(metadata["axis_detection"]["x_range_source"], "reference")
         self.assertEqual(metadata["axis_detection"]["y_range_source"], "reference")
 
-    def test_gpu_shell_guidance_mentions_ai_extra_install(self) -> None:
+    def test_gpu_shells_include_ai_stack_by_default(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
-        ai_install = 'echo "  uv pip install -e \\".[ai]\\""'
-        rocm_torch = 'echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2"'
-        cuda_torch = 'echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124"'
-
-        self.assertGreaterEqual(flake_text.count(ai_install), 2)
-        self.assertIn(rocm_torch, flake_text)
-        self.assertIn(cuda_torch, flake_text)
-
-        rocm_torch_index = flake_text.index(rocm_torch)
-        cuda_torch_index = flake_text.index(cuda_torch)
-        rocm_ai_index = flake_text.rfind(ai_install, 0, rocm_torch_index)
-        cuda_ai_index = flake_text.rfind(ai_install, 0, cuda_torch_index)
-        self.assertGreaterEqual(rocm_ai_index, 0)
-        self.assertGreaterEqual(cuda_ai_index, 0)
-        self.assertLess(rocm_ai_index, rocm_torch_index)
-        self.assertLess(cuda_ai_index, cuda_torch_index)
+        self.assertIn("rocmPkgs = pkgs.pkgsRocm;", flake_text)
+        self.assertIn("cudaPkgs = pkgs.pkgsCuda;", flake_text)
+        self.assertEqual(
+            flake_text.count("extraPythonPkgs = ps: with ps; [ ultralytics ];"),
+            2,
+        )
+        self.assertEqual(
+            flake_text.count('echo "AI dependencies are included by default in this shell."'),
+            2,
+        )
 
     def test_dev_shell_exposes_digitizer_command_wrapper(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()

@@ -14,7 +14,8 @@ Use the shell that matches your hardware:
 | `rocm` | `nix develop .#rocm` | AMD GPU (ROCm/HIP) |
 | `cuda` | `nix develop .#cuda` | NVIDIA GPU (CUDA) |
 
-Inside these shells, `digitizer` is already available.
+Inside these shells, `digitizer` is already available. The GPU shells also include
+the AI stack by default (`ultralytics` plus accelerator-matched `torch`/`torchvision`).
 
 ```bash
 digitizer --help
@@ -26,14 +27,16 @@ One-shot example for CUDA:
 nix develop .#cuda --command digitizer --help
 ```
 
-If you need AI training/inference, install extras in that shell:
+If you need AI training/inference:
 
 ```bash
+# In `nix develop .#rocm` or `nix develop .#cuda`, AI dependencies are already included.
+# In the default CPU shell or a plain virtualenv, install them yourself:
 uv pip install -e ".[ai]"
-# ROCm shell:
-uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
-# CUDA shell:
+# Then install torch + torchvision for your accelerator:
 uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+# or:
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
 ```
 
 > **AMD APU note (Ryzen 7 8745HS / Radeon 780M):** The `rocm` shell automatically sets
