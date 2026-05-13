@@ -15,9 +15,9 @@ Use the shell that matches your hardware:
 | `cuda` | `nix develop .#cuda` | NVIDIA GPU (CUDA) |
 | `cuda-legacy` | `nix develop .#cuda-legacy` | NVIDIA legacy driver stack (470 / CUDA 11.4) |
 
-Inside these shells, `digitizer` is already available. The `rocm` and `cuda` shells
-include the AI stack by default (`ultralytics` plus accelerator-matched
-`torch`/`torchvision`), while `cuda-legacy` expects a manual torch install.
+Inside these shells, `digitizer` is already available. The GPU shells (`rocm`,
+`cuda`, and `cuda-legacy`) include the AI stack by default (`ultralytics` plus
+accelerator-matched `torch`/`torchvision`).
 
 ```bash
 digitizer --help
@@ -33,9 +33,6 @@ Legacy NVIDIA driver example (470 / CUDA 11.4):
 
 ```bash
 nix develop .#cuda-legacy
-uv pip install --index-url https://download.pytorch.org/whl/cu113 \
-  "torch==1.12.1+cu113" "torchvision==0.13.1+cu113"
-uv pip install -e ".[ai]"
 digitizer --help
 ```
 

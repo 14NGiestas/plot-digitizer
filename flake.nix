@@ -146,14 +146,14 @@
 
             # NVIDIA GPU — CUDA legacy (driver 470 / CUDA 11.4 class systems)
             cuda-legacy = mkPyShell {
-              shellPython = pkgs.python310;
+              shellPython = cudaPkgs.python310;
+              extraPkgs = cudaLibs;
+              extraPythonPkgs = ps: with ps; [ ultralytics ];
               shellHook = ''
+                export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
+                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}:$LD_LIBRARY_PATH"
                 echo "CUDA legacy shell ready (Python 3.10)."
-                echo "For driver 470/CUDA 11.4 hosts, install a compatible torch wheel in-shell:"
-                echo "  uv pip install --index-url https://download.pytorch.org/whl/cu113 \\"
-                echo "    'torch==1.12.1+cu113' 'torchvision==0.13.1+cu113'"
-                echo "Then install AI extras if needed:"
-                echo "  uv pip install -e '.[ai]'"
+                echo "AI dependencies are included by default in this shell."
               '';
             };
           }
