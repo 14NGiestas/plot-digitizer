@@ -143,6 +143,19 @@
                 echo "AI dependencies are included by default in this shell."
               '';
             };
+
+            # NVIDIA GPU — CUDA legacy (driver 470 / CUDA 11.4 class systems)
+            cuda-legacy = mkPyShell {
+              shellPython = cudaPkgs.python310;
+              extraPkgs = cudaLibs;
+              extraPythonPkgs = ps: with ps; [ ultralytics ];
+              shellHook = ''
+                export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
+                export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}:$LD_LIBRARY_PATH"
+                echo "CUDA legacy shell ready (Python 3.10)."
+                echo "AI dependencies are included by default in this shell."
+              '';
+            };
           }
         );
       in
