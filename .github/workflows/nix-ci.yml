@@ -53,6 +53,8 @@ jobs:
           [ -n "$prediction_csv" ] || { echo "No digitized CSV found"; exit 1; }
           [ -n "$truth_csv" ] || { echo "No ground-truth CSV found"; exit 1; }
           set +e
+          # `validate` returns 0 when error is under threshold and 1 when above threshold;
+          # both statuses indicate the command executed successfully.
           validate_output="$(nix run . -- validate --prediction-csv "$prediction_csv" --truth-csv "$truth_csv" 2>&1)"
           validate_status=$?
           set -e
