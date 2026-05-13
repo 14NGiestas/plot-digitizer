@@ -404,9 +404,42 @@ def resolve_plot_box(image_path: Path, image: np.ndarray, processed_gray: np.nda
     return detect_plot_box(image, processed_gray)
 
 
+def detect_axis_anchor_pixels(processed_gray: np.ndarray, plot_box: PlotBox) -> dict[str, tuple[float, float]] | None:
+    """Estimate axis anchor pixel positions from strong dark-line projections."""
+    crop = processed_gray[plot_box.top : plot_box.bottom, plot_box.left : plot_box.right]
+    if crop.size == 0:
+        return None
+    threshold = min(MAX_DARK_THRESHOLD, int(np.percentile(crop, DARK_PIXEL_PERCENTILE)))
+    dark_mask = crop < threshold
+    row_counts = dark_mask.sum(axis=1)
+    col_counts = dark_mask.sum(axis=0)
+    if row_counts.max(initial=0) <= 0 or col_counts.max(initial=0) <= 0:
+        return None
+
+    height, width = crop.shape
+    bottom_band_start = int(height * 0.6)
+    left_band_end = max(1, int(width * 0.4))
+    x_axis_idx_local = int(bottom_band_start + np.argmax(row_counts[bottom_band_start:]))
+    y_axis_idx_local = int(np.argmax(col_counts[:left_band_end]))
+
+    x_axis_dark = np.flatnonzero(dark_mask[x_axis_idx_local, :])
+    y_axis_dark = np.flatnonzero(dark_mask[:, y_axis_idx_local])
+    if x_axis_dark.size < 2 or y_axis_dark.size < 2:
+        return None
+
+    x_left = float(plot_box.left + x_axis_dark.min())
+    x_right = float(plot_box.left + x_axis_dark.max())
+    y_top = float(plot_box.top + y_axis_dark.min())
+    y_bottom = float(plot_box.top + y_axis_dark.max())
+    if np.isclose(x_left, x_right) or np.isclose(y_top, y_bottom):
+        return None
+    return {"x": (x_left, x_right), "y": (y_bottom, y_top)}
+
+
 def calibrate_axes(
     image_path: Path,
     plot_box: PlotBox,
+    processed_gray: np.ndarray | None,
     x_range: tuple[float, float] | None,
     y_range: tuple[float, float] | None,
     x_reference: AxisReferencePair | None,
@@ -414,11 +447,22 @@ def calibrate_axes(
     x_scale: str,
     y_scale: str,
     invert_y: bool,
+    auto_axis_anchors: bool = True,
 ) -> tuple[AxisCalibration, dict[str, Any]]:
     """Resolve axis ranges from CLI hints, sidecars, OCR, or defaults."""
     sidecar = _parse_sidecar_metadata(image_path) or {}
     x_bounds = x_range or tuple(sidecar.get("x_range", DEFAULT_X_RANGE))
     y_bounds = y_range or tuple(sidecar.get("y_range", DEFAULT_Y_RANGE))
+    used_auto_x = False
+    used_auto_y = False
+    auto_anchor_pixels: dict[str, tuple[float, float]] | None = None
+    if auto_axis_anchors and processed_gray is not None and (x_reference is None or y_reference is None):
+        auto_anchor_pixels = detect_axis_anchor_pixels(processed_gray, plot_box)
+        if auto_anchor_pixels is not None and x_reference is None:
+            used_auto_x = True
+        if auto_anchor_pixels is not None and y_reference is None:
+            used_auto_y = True
+
     if x_reference is not None:
         x_bounds = _resolve_bounds_from_references(
             plot_box=plot_box,
@@ -448,18 +492,27 @@ def calibrate_axes(
     )
     metadata = {
         "origin_pixel": {"x": plot_box.left, "y": plot_box.bottom},
+        "axis_anchor_pixels": auto_anchor_pixels,
         "axis_detection": {
-            "x_range_source": "reference" if x_reference else ("cli" if x_range else ("sidecar" if "x_range" in sidecar else "default")),
-            "y_range_source": "reference" if y_reference else ("cli" if y_range else ("sidecar" if "y_range" in sidecar else "default")),
+            "x_range_source": (
+                "auto-anchor"
+                if used_auto_x
+                else ("reference" if x_reference else ("cli" if x_range else ("sidecar" if "x_range" in sidecar else "default")))
+            ),
+            "y_range_source": (
+                "auto-anchor"
+                if used_auto_y
+                else ("reference" if y_reference else ("cli" if y_range else ("sidecar" if "y_range" in sidecar else "default")))
+            ),
             "x_scale": calibration.x_scale,
             "y_scale": calibration.y_scale,
             "invert_y": calibration.invert_y,
         },
         "warnings": [],
     }
-    if not x_range and "x_range" not in sidecar and not x_reference:
+    if not x_range and "x_range" not in sidecar and not x_reference and not used_auto_x:
         metadata["warnings"].append("X-axis bounds were not auto-detected; defaulting to 0:1. Pass --x-range for better accuracy.")
-    if not y_range and "y_range" not in sidecar and not y_reference:
+    if not y_range and "y_range" not in sidecar and not y_reference and not used_auto_y:
         metadata["warnings"].append("Y-axis bounds were not auto-detected; defaulting to 0:1. Pass --y-range for better accuracy.")
     return calibration, metadata
 
@@ -775,6 +828,7 @@ def digitize_image(
     weights: str | None,
     conf_threshold: float,
     create_overlay_image: bool,
+    auto_axis_anchors: bool = True,
 ) -> DigitizeResult:
     """Digitize a single image and write CSV/JSON artifacts."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -784,6 +838,7 @@ def digitize_image(
     calibration, axis_metadata = calibrate_axes(
         image_path=image_path,
         plot_box=plot_box,
+        processed_gray=processed_gray,
         x_range=x_range,
         y_range=y_range,
         x_reference=x_reference,
@@ -791,6 +846,7 @@ def digitize_image(
         x_scale=x_scale,
         y_scale=y_scale,
         invert_y=invert_y,
+        auto_axis_anchors=auto_axis_anchors,
     )
 
     segmentations = run_ai_segmentation(image, plot_box, weights, conf_threshold)
@@ -1124,7 +1180,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
     
     colors = ["tab:red", "tab:blue", "tab:green", "tab:purple", "tab:orange", "tab:cyan"]
     linestyles = ["-", "--", "-.", ":"]
-    # Bias toward thinner strokes to improve recall on faint/low-width curves.
+    # Weighted sampling favors thinner strokes for better faint-curve recall.
     linewidths = CURVE_LINEWIDTHS
 
     fig, ax = plt.subplots(figsize=fig_size, dpi=dpi)
@@ -1206,7 +1262,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
             label_lines.append("0 " + " ".join(f"{value:.6f}" for value in polygon))
 
     # Add complex annotations (vbars, hbars, arrows, error bars)
-    # Keep key annotation classes (vbar/hbar/error_bar) present in all samples.
+    # Keep vbar/hbar/error_bar present in all samples; arrows remain optional.
     n_vbars = int(rng.integers(VBAR_COUNT_RANGE[0], VBAR_COUNT_RANGE[1] + 1))
     for vbar_idx in range(n_vbars):
         x_pos = rng.uniform(0.1, 0.9)
@@ -1384,8 +1440,8 @@ def run_training(
         "project": str(output_dir),
         "task": "segment",
     }
-    if hyp_yaml is not None:
-        hyp_path = hyp_yaml.resolve()
+    hyp_path = hyp_yaml.resolve() if hyp_yaml is not None else None
+    if hyp_path is not None:
         if not hyp_path.exists():
             raise FileNotFoundError(f"Hyperparameter config not found: {hyp_path}")
         training_plan["cfg"] = str(hyp_path)
@@ -1431,8 +1487,8 @@ def run_training(
             "project": str(output_dir),
             "name": "synthetic_plot_digitizer",
         }
-        if hyp_yaml is not None:
-            train_kwargs["cfg"] = str(hyp_yaml.resolve())
+        if hyp_path is not None:
+            train_kwargs["cfg"] = str(hyp_path)
         training_plan["result"] = model.train(**train_kwargs).save_dir.as_posix()
     return training_plan
 
@@ -1554,6 +1610,11 @@ def build_parser() -> argparse.ArgumentParser:
     digitize_parser.add_argument("--x-scale", choices=["linear", "log"], default="linear")
     digitize_parser.add_argument("--y-scale", choices=["linear", "log"], default="linear")
     digitize_parser.add_argument("--invert-y", action="store_true")
+    digitize_parser.add_argument(
+        "--disable-auto-axis-anchors",
+        action="store_true",
+        help="Disable automatic axis-anchor point detection for calibration fallback.",
+    )
     digitize_parser.add_argument("--weights", default=None, help="YOLO .pt or .onnx segmentation weights.")
     digitize_parser.add_argument("--conf-threshold", type=float, default=0.25)
     digitize_parser.add_argument("--overlay", action="store_true", help="Write overlay images.")
@@ -1631,6 +1692,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 weights=args.weights,
                 conf_threshold=args.conf_threshold,
                 create_overlay_image=args.overlay,
+                auto_axis_anchors=not args.disable_auto_axis_anchors,
             )
             results.append(
                 {

@@ -215,6 +215,12 @@ digitizer digitize real-plots/plot.png \
   --y-reference "710:0,120:100"
 ```
 
+When explicit references are not provided, the digitizer now attempts to auto-detect axis anchor pixels from strong axis lines and uses the resolved axis ranges for calibration. Disable this fallback with:
+
+```bash
+digitizer digitize real-plots/plot.png --disable-auto-axis-anchors
+```
+
 You can also select those axis points interactively:
 
 ```bash

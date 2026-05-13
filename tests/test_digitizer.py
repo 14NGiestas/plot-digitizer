@@ -279,6 +279,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
         calibration, metadata = digitizer.calibrate_axes(
             image_path=image_path,
             plot_box=plot_box,
+            processed_gray=None,
             x_range=None,
             y_range=None,
             x_reference=((30.0, 2.0), (80.0, 7.0)),
@@ -293,6 +294,35 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertAlmostEqual(calibration.y_max, 100.0, places=6)
         self.assertEqual(metadata["axis_detection"]["x_range_source"], "reference")
         self.assertEqual(metadata["axis_detection"]["y_range_source"], "reference")
+
+    def test_calibrate_axes_can_auto_detect_axis_anchor_pixels(self) -> None:
+        image_path = Path("nonexistent.png")
+        plot_box = digitizer.PlotBox(left=10, top=10, right=110, bottom=210)
+        processed_gray = np.full((220, 120), 255, dtype=np.uint8)
+        # Simulate dark y-axis and x-axis lines inside the detected plot box.
+        processed_gray[25:195, 24] = 0
+        processed_gray[186, 24:101] = 0
+
+        calibration, metadata = digitizer.calibrate_axes(
+            image_path=image_path,
+            plot_box=plot_box,
+            processed_gray=processed_gray,
+            x_range=(0.0, 10.0),
+            y_range=(0.0, 100.0),
+            x_reference=None,
+            y_reference=None,
+            x_scale="linear",
+            y_scale="linear",
+            invert_y=False,
+            auto_axis_anchors=True,
+        )
+        self.assertAlmostEqual(calibration.x_min, 0.0, places=6)
+        self.assertAlmostEqual(calibration.x_max, 10.0, places=6)
+        self.assertAlmostEqual(calibration.y_min, 0.0, places=6)
+        self.assertAlmostEqual(calibration.y_max, 100.0, places=6)
+        self.assertEqual(metadata["axis_detection"]["x_range_source"], "auto-anchor")
+        self.assertEqual(metadata["axis_detection"]["y_range_source"], "auto-anchor")
+        self.assertIsNotNone(metadata["axis_anchor_pixels"])
 
     def test_gpu_shells_auto_install_torch_via_venv(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
