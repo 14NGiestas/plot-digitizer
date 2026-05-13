@@ -15,8 +15,8 @@
         };
         python = pkgs.python312;
         commonSystemLibs = with pkgs; [
-          # `xorg.libxcb` was renamed to `libxcb` in current Nixpkgs.
-          libxcb
+          # In this pinned nixpkgs revision, libxcb is under xorg.
+          xorg.libxcb
         ];
         packagedCli = python.pkgs.buildPythonApplication {
           pname = "digitizer";
