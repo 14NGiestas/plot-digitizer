@@ -266,7 +266,8 @@ class DigitizerWorkflowTests(unittest.TestCase):
 
     def test_gpu_shells_auto_install_torch_via_venv(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
-        self.assertIn("rocmPkgs = pkgs.pkgsRocm;", flake_text)
+        self.assertIn("rocmPkgs = if pkgs ? pkgsRocm", flake_text)
+        self.assertIn("then pkgs.pkgsRocm else pkgs;", flake_text)
         self.assertIn("cudaPkgs = if pkgs ? pkgsCuda", flake_text)
         self.assertIn("then pkgs.pkgsCuda else pkgs;", flake_text)
         self.assertIn(

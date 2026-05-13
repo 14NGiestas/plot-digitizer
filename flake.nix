@@ -164,7 +164,7 @@
         # GPU-specific shells are only meaningful on Linux
         gpuShells = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
           let
-            rocmPkgs = pkgs.pkgsRocm;
+            rocmPkgs = if pkgs ? pkgsRocm then pkgs.pkgsRocm else pkgs;
             cudaPkgs = if pkgs ? pkgsCuda then pkgs.pkgsCuda else pkgs;
             cudaLegacyPkgs = pkgs.cudaPackages_11_8;
             # Prefer legacy-set Python first (python310 when exposed) for CUDA
