@@ -70,6 +70,7 @@ old_paper_fig1.png,vbar,150,50,700,3,,,,,,,,,
 old_paper_fig1.png,hbar,,,,,400,100,1100,2,,,,,
 old_paper_fig1.png,arrow,,,,5,,,,,200,300,400,500,
 ```
+Each row only uses the columns required by its `type` (`vbar`: `x,y_top,y_bottom`; `hbar`: `y,x_left,x_right`; `arrow`: `start_x,start_y,end_x,end_y`).
 
 #### JSON Format Example
 Create `annotations.json`:
