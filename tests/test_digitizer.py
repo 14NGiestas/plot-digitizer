@@ -264,7 +264,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertEqual(metadata["axis_detection"]["x_range_source"], "reference")
         self.assertEqual(metadata["axis_detection"]["y_range_source"], "reference")
 
-    def test_gpu_shells_include_ultralytics_with_torch_install_hint(self) -> None:
+    def test_gpu_shells_auto_install_torch_via_venv(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
         self.assertIn("rocmPkgs = pkgs.pkgsRocm;", flake_text)
         self.assertIn("cudaPkgs = if pkgs ? pkgsCuda", flake_text)
@@ -273,17 +273,23 @@ class DigitizerWorkflowTests(unittest.TestCase):
             "aiPythonPkgs = defaultPs: ps:",
             flake_text,
         )
+        # All three GPU shells must use the AI Python packages.
         self.assertEqual(
             flake_text.count("extraPythonPkgs = aiPythonPkgs python.pkgs;"),
             3,
         )
-        self.assertEqual(
-            flake_text.count('echo "Ultralytics is included by default in this shell."'),
-            3,
-        )
-        self.assertEqual(
-            flake_text.count('echo "Install torch/torchvision for your accelerator before training (see README)."'),
-            3,
+        # mkAiVenvHook helper must be present and wired up for each accelerator.
+        self.assertIn("mkAiVenvHook", flake_text)
+        self.assertIn("venv-ai-rocm", flake_text)
+        self.assertIn("venv-ai-cuda", flake_text)
+        self.assertIn("venv-ai-cuda-legacy", flake_text)
+        self.assertIn("rocm6.2", flake_text)
+        self.assertIn("cu124", flake_text)
+        self.assertIn("cu118", flake_text)
+        # Old manual-install hint echoes must be gone.
+        self.assertNotIn(
+            'echo "Install torch/torchvision for your accelerator before training (see README)."',
+            flake_text,
         )
 
     def test_dev_shell_exposes_digitizer_command_wrapper(self) -> None:
