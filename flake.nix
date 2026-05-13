@@ -114,6 +114,15 @@
               else if cudaLegacyPkgs ? python then cudaLegacyPkgs.python
               else if cudaPkgs ? python312 then cudaPkgs.python312
               else pkgs.python312;
+            cudaLegacyPythonSource =
+              if cudaLegacyPkgs ? python310 then "cudaLegacyPkgs.python310"
+              else if cudaLegacyPkgs ? python then "cudaLegacyPkgs.python"
+              else if cudaPkgs ? python312 then "cudaPkgs.python312"
+              else "pkgs.python312";
+            cudaLegacyPythonVersion =
+              if cudaLegacyPython ? pythonVersion then cudaLegacyPython.pythonVersion
+              else if cudaLegacyPython ? version then cudaLegacyPython.version
+              else "unknown";
 
             # --- ROCm / HIP (AMD GPU) ---
             rocmLibs = with rocmPkgs.rocmPackages; [
@@ -177,7 +186,7 @@
               shellHook = ''
                 export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-                echo "CUDA legacy shell ready (Python ${cudaLegacyPython.pythonVersion}, CUDA 11.8 userspace)."
+                echo "CUDA legacy shell ready (Python ${cudaLegacyPythonVersion} from ${cudaLegacyPythonSource}, CUDA 11.8 userspace)."
                 echo "AI dependencies are included by default in this shell."
               '';
             };
