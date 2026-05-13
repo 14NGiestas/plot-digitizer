@@ -226,8 +226,8 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertEqual(metadata["axis_detection"]["y_range_source"], "reference")
 
     def test_gpu_shell_guidance_mentions_ai_extra_install(self) -> None:
-        flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
-        ai_install = 'uv pip install -e \\".[ai]\\"'
+        flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text().replace('\\"', '"')
+        ai_install = 'uv pip install -e ".[ai]"'
         rocm_torch = 'echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2"'
         cuda_torch = 'echo "  uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124"'
 
