@@ -1406,13 +1406,13 @@ def run_training(
 
         model = YOLO(weights)
         train_kwargs: dict[str, Any] = {
-            data=str(dataset_yaml),
-            task="segment",
-            epochs=epochs,
-            imgsz=imgsz,
-            batch=batch,
-            project=str(output_dir),
-            name="synthetic_plot_digitizer",
+            "data": str(dataset_yaml),
+            "task": "segment",
+            "epochs": epochs,
+            "imgsz": imgsz,
+            "batch": batch,
+            "project": str(output_dir),
+            "name": "synthetic_plot_digitizer",
         }
         if hyp_yaml is not None:
             train_kwargs["cfg"] = str(hyp_yaml.resolve())
