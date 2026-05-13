@@ -15,8 +15,9 @@ Use the shell that matches your hardware:
 | `cuda` | `nix develop .#cuda` | NVIDIA GPU (CUDA) |
 | `cuda-legacy` | `nix develop .#cuda-legacy` | NVIDIA legacy driver stack (470 / CUDA 11.4) |
 
-Inside these shells, `digitizer` is already available. The GPU shells also include
-the AI stack by default (`ultralytics` plus accelerator-matched `torch`/`torchvision`).
+Inside these shells, `digitizer` is already available. The `rocm` and `cuda` shells
+include the AI stack by default (`ultralytics` plus accelerator-matched
+`torch`/`torchvision`), while `cuda-legacy` expects a manual torch install.
 
 ```bash
 digitizer --help
