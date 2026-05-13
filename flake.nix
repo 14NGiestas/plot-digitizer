@@ -72,7 +72,9 @@
           scipy
         ];
         # `ps` is the shell-selected Python package set; `defaultPs` is a
-        # fallback set used when shell-specific package overlays omit ultralytics.
+        # fallback set used when shell-specific overlays do not export
+        # `ultralytics` (observed in some CUDA legacy package-set layouts).
+        # Prefer the shell package set first so accelerator-tuned builds win.
         aiPythonPkgs = defaultPs: ps:
           let
             hasShellUltralytics = ps ? ultralytics;
@@ -105,6 +107,8 @@
             rocmPkgs = pkgs.pkgsRocm;
             cudaPkgs = if pkgs ? pkgsCuda then pkgs.pkgsCuda else pkgs;
             cudaLegacyPkgs = pkgs.cudaPackages_11_8;
+            # Prefer legacy-set Python first (python310 when exposed) for CUDA
+            # 11.8 compatibility, then progressively fall back to broader sets.
             cudaLegacyPython =
               if cudaLegacyPkgs ? python310 then cudaLegacyPkgs.python310
               else if cudaLegacyPkgs ? python then cudaLegacyPkgs.python

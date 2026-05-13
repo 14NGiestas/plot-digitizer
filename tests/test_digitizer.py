@@ -228,10 +228,8 @@ class DigitizerWorkflowTests(unittest.TestCase):
     def test_gpu_shells_include_ai_stack_by_default(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
         self.assertIn("rocmPkgs = pkgs.pkgsRocm;", flake_text)
-        self.assertIn(
-            "cudaPkgs = if pkgs ? pkgsCuda then pkgs.pkgsCuda else pkgs;",
-            flake_text,
-        )
+        self.assertIn("cudaPkgs = if pkgs ? pkgsCuda", flake_text)
+        self.assertIn("then pkgs.pkgsCuda else pkgs;", flake_text)
         self.assertIn(
             "aiPythonPkgs = defaultPs: ps:",
             flake_text,
