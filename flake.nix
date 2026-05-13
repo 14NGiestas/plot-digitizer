@@ -71,6 +71,8 @@
           scikit-learn
           scipy
         ];
+        # `ps` is the shell-selected Python package set; `defaultPs` is a
+        # fallback set used when shell-specific package overlays omit ultralytics.
         aiPythonPkgs = defaultPs: ps:
           let
             hasShellUltralytics = ps ? ultralytics;
@@ -107,7 +109,7 @@
               if cudaLegacyPkgs ? python310 then cudaLegacyPkgs.python310
               else if cudaLegacyPkgs ? python then cudaLegacyPkgs.python
               else if cudaPkgs ? python312 then cudaPkgs.python312
-              else python;
+              else pkgs.python312;
 
             # --- ROCm / HIP (AMD GPU) ---
             rocmLibs = with rocmPkgs.rocmPackages; [
