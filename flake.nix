@@ -38,6 +38,7 @@
               scikit-image
               scikit-learn
               scipy
+              ultralytics
             ];
 
             pythonRemoveDeps = [
@@ -68,6 +69,7 @@
                 scikit-image
                 scikit-learn
                 scipy
+                ultralytics
               ]))
               pkgs.uv
             ];
