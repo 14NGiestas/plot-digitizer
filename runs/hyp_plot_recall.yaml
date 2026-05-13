@@ -1,3 +1,4 @@
+# 253 = remaining epochs when resuming a 300-epoch schedule from epoch 47.
 model: yolov8s-seg.pt
 imgsz: 768
 batch: 6

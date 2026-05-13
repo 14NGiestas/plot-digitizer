@@ -84,6 +84,13 @@ POLY_A_RANGE = (-0.05, 0.05)
 POLY_B_RANGE = (-0.4, 0.4)
 POLY_C_RANGE = (-0.8, 0.8)
 NOISE_STD_RANGE = (0.01, 0.05)
+DENSE_CURVE_PROBABILITY = 0.4
+DENSE_CURVE_COUNT_RANGE = (4, 6)
+BASE_CURVE_COUNT_RANGE = (2, 4)
+VBAR_COUNT_RANGE = (1, 3)
+HBAR_COUNT_RANGE = (1, 2)
+ARROW_COUNT_RANGE = (0, 2)
+ERROR_BAR_COUNT_RANGE = (2, 5)
 AxisReferencePair = tuple[tuple[float, float], tuple[float, float]]
 
 
@@ -1155,10 +1162,10 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
     else:
         # General plots
         # Oversample dense curve scenes to improve recall under overlap.
-        if rng.random() < 0.4:
-            curve_count = int(rng.integers(4, 7))
+        if rng.random() < DENSE_CURVE_PROBABILITY:
+            curve_count = int(rng.integers(DENSE_CURVE_COUNT_RANGE[0], DENSE_CURVE_COUNT_RANGE[1] + 1))
         else:
-            curve_count = int(rng.integers(2, 5))
+            curve_count = int(rng.integers(BASE_CURVE_COUNT_RANGE[0], BASE_CURVE_COUNT_RANGE[1] + 1))
         raw_curves = [_random_curve(x_values, rng) for _ in range(curve_count)]
         all_y = np.concatenate([curve for curve, _ in raw_curves])
         y_margin = max(0.5, float(np.ptp(all_y) * 0.1))
@@ -1193,7 +1200,8 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
             label_lines.append("0 " + " ".join(f"{value:.6f}" for value in polygon))
 
     # Add complex annotations (vbars, hbars, arrows, error bars)
-    n_vbars = int(rng.integers(1, 4))
+    # Keep minority annotation classes present in most samples to improve recall.
+    n_vbars = int(rng.integers(VBAR_COUNT_RANGE[0], VBAR_COUNT_RANGE[1] + 1))
     for vbar_idx in range(n_vbars):
         x_pos = rng.uniform(0.1, 0.9)
         vbar_width = rng.uniform(1.0, 3.0)
@@ -1210,7 +1218,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
                 "description": f"high_symmetry_point_{vbar_idx}"
             })
 
-    n_hbars = int(rng.integers(1, 3))
+    n_hbars = int(rng.integers(HBAR_COUNT_RANGE[0], HBAR_COUNT_RANGE[1] + 1))
     for hbar_idx in range(n_hbars):
         y_pos_norm = rng.uniform(0.1, 0.9)
         y_pos = y_range[0] + y_pos_norm * (y_range[1] - y_range[0])
@@ -1228,7 +1236,8 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
                 "description": f"reference_line_{hbar_idx}"
             })
 
-    n_arrows = int(rng.integers(0, 3))
+    # Arrows are optional in real plots, so allow zero while preserving exposure.
+    n_arrows = int(rng.integers(ARROW_COUNT_RANGE[0], ARROW_COUNT_RANGE[1] + 1))
     for arrow_idx in range(n_arrows):
         start = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
         end = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
@@ -1246,7 +1255,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
                 "description": f"annotation_arrow_{arrow_idx}"
             })
 
-    n_error_bars = int(rng.integers(2, 6))
+    n_error_bars = int(rng.integers(ERROR_BAR_COUNT_RANGE[0], ERROR_BAR_COUNT_RANGE[1] + 1))
     for eb_idx in range(n_error_bars):
         x_pos = rng.uniform(0.1, 0.9)
         y_pos = rng.uniform(0.2, 0.8)

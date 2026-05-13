@@ -75,9 +75,11 @@ def run_diagnostics(
     model = YOLO(str(model_path))
 
     val_result = model.val(data=str(data_yaml), split="val", conf=0.001, iou=iou, plots=True)
+    box_maps = [float(v) for v in val_result.box.maps] if getattr(val_result, "box", None) is not None else []
+    seg_maps = [float(v) for v in val_result.seg.maps] if getattr(val_result, "seg", None) is not None else []
     metrics = {
-        "box_map_per_class": [float(v) for v in getattr(val_result.box, "maps", [])],
-        "seg_map_per_class": [float(v) for v in getattr(val_result.seg, "maps", [])],
+        "box_map_per_class": box_maps,
+        "seg_map_per_class": seg_maps,
     }
     (output_dir / "per_class_metrics.json").write_text(json.dumps(metrics, indent=2))
 
