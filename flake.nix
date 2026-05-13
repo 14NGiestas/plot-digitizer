@@ -71,6 +71,9 @@
           scikit-learn
           scipy
         ];
+        aiPythonPkgs = ps:
+          pkgs.lib.optionals (ps ? ultralytics) [ ps.ultralytics ]
+          ++ pkgs.lib.optionals (!(ps ? ultralytics) && (python.pkgs ? ultralytics)) [ python.pkgs.ultralytics ];
         digitizerShellCommand = pkgs.writeShellScriptBin "digitizer" ''
           exec python -m digitizer "$@"
         '';
@@ -124,7 +127,7 @@
             rocm = mkPyShell {
               shellPython = rocmPkgs.python312;
               extraPkgs = rocmLibs;
-              extraPythonPkgs = ps: with ps; [ ultralytics ];
+              extraPythonPkgs = aiPythonPkgs;
               shellHook = ''
                 export ROCM_PATH="${rocmPkgs.rocmPackages.rocm-runtime}"
                 export HIP_PATH="${rocmPkgs.rocmPackages.clr}"
@@ -142,7 +145,7 @@
             cuda = mkPyShell {
               shellPython = cudaPkgs.python312;
               extraPkgs = cudaLibs;
-              extraPythonPkgs = ps: with ps; [ ultralytics ];
+              extraPythonPkgs = aiPythonPkgs;
               shellHook = ''
                 export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
@@ -153,13 +156,16 @@
 
             # NVIDIA GPU — CUDA legacy (driver 470 class via CUDA 11.8 userspace)
             cuda-legacy = mkPyShell {
-              shellPython = cudaPkgs.python312;
+              shellPython =
+                if cudaLegacyPkgs ? python310 then cudaLegacyPkgs.python310
+                else if cudaLegacyPkgs ? python then cudaLegacyPkgs.python
+                else cudaPkgs.python312;
               extraPkgs = cudaLegacyLibs;
-              extraPythonPkgs = ps: with ps; [ ultralytics ];
+              extraPythonPkgs = aiPythonPkgs;
               shellHook = ''
                 export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-                echo "CUDA legacy shell ready (CUDA 11.8 userspace)."
+                echo "CUDA legacy shell ready (Python $(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")'), CUDA 11.8 userspace)."
                 echo "AI dependencies are included by default in this shell."
               '';
             };

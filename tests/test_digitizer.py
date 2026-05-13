@@ -232,8 +232,12 @@ class DigitizerWorkflowTests(unittest.TestCase):
             "cudaPkgs = if pkgs ? pkgsCuda then pkgs.pkgsCuda else pkgs;",
             flake_text,
         )
+        self.assertIn(
+            "aiPythonPkgs = ps:",
+            flake_text,
+        )
         self.assertEqual(
-            flake_text.count("extraPythonPkgs = ps: with ps; [ ultralytics ];"),
+            flake_text.count("extraPythonPkgs = aiPythonPkgs;"),
             3,
         )
         self.assertEqual(
