@@ -1200,7 +1200,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
                 mask = _render_arrow_mask(fig_size, dpi, start, end, style)
                 polygon = _mask_to_yolo_polygon(mask)
                 if polygon:
-                    class_id = 4  # arrow class
+                    class_id = 3  # arrow class
                     label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
                     annotation_descriptors.append({
                         "type": "arrow",
@@ -1221,7 +1221,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
                 mask = _render_error_bar_mask(fig_size, dpi, x_pos, y_pos, y_err, style)
                 polygon = _mask_to_yolo_polygon(mask)
                 if polygon:
-                    class_id = 5  # error_bar class
+                    class_id = 4  # error_bar class
                     label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
                     annotation_descriptors.append({
                         "type": "error_bar",
@@ -1291,7 +1291,7 @@ def generate_synthetic_dataset(output_dir: Path, count: int, seed: int, image_fo
             current_plot_type = plot_type
         _write_synthetic_example(index, output_dir, rng, image_format, current_plot_type)
     
-    # Updated class names for multi-class segmentation (6 classes)
+    # Multi-class segmentation labels must stay contiguous from 0..nc-1
     dataset_yaml = output_dir / "dataset.yaml"
     dataset_yaml.write_text(
         "\n".join(
@@ -1300,7 +1300,7 @@ def generate_synthetic_dataset(output_dir: Path, count: int, seed: int, image_fo
                 "train: images",
                 "val: images",
                 "test: images",
-                "nc: 6",
+                "nc: 5",
                 "names:",
                 "  0: curve",
                 "  1: vbar",

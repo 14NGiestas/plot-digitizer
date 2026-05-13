@@ -137,6 +137,34 @@ class DigitizerWorkflowTests(unittest.TestCase):
         parsed = digitizer.parse_reference_pair("20:0,120:10", "x")
         self.assertEqual(parsed, ((20.0, 0.0), (120.0, 10.0)))
 
+    def test_generate_writes_consistent_multiclass_dataset_yaml(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_dir = Path(tmp) / "synthetic"
+            digitizer.generate_synthetic_dataset(
+                dataset_dir,
+                count=8,
+                seed=7,
+                image_format="png",
+                plot_type="mixed",
+            )
+
+            yaml_text = (dataset_dir / "dataset.yaml").read_text().splitlines()
+            nc_value = int(next(line.split(":", 1)[1].strip() for line in yaml_text if line.startswith("nc:")))
+            name_lines = [line for line in yaml_text if line.startswith("  ")]
+            names = {int(line.split(":", 1)[0].strip()): line.split(":", 1)[1].strip() for line in name_lines}
+
+            self.assertEqual(nc_value, len(names))
+            self.assertEqual(sorted(names.keys()), list(range(nc_value)))
+
+            max_class_id = -1
+            for label_file in (dataset_dir / "labels").glob("*.txt"):
+                for raw_line in label_file.read_text().splitlines():
+                    if not raw_line.strip():
+                        continue
+                    max_class_id = max(max_class_id, int(raw_line.split()[0]))
+            self.assertGreaterEqual(max_class_id, 0)
+            self.assertLess(max_class_id, nc_value)
+
     def test_calibrate_axes_uses_reference_points_for_non_extreme_axis_points(self) -> None:
         image_path = Path("nonexistent.png")
         plot_box = digitizer.PlotBox(left=10, top=10, right=110, bottom=210)
