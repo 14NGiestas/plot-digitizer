@@ -91,7 +91,9 @@ def run_diagnostics(
     }
     (output_dir / "per_class_metrics.json").write_text(json.dumps(metrics, indent=2))
 
-    image_paths = sorted([p for p in images_dir.iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg"}])
+    image_paths = sorted(
+        [p for p in images_dir.iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}]
+    )
     confs: list[float] = []
     recalls: list[tuple[str, float]] = []
 

@@ -92,6 +92,7 @@ HBAR_COUNT_RANGE = (1, 2)
 ARROW_COUNT_RANGE = (0, 2)
 ERROR_BAR_COUNT_RANGE = (2, 5)
 CURVE_LINEWIDTHS = [0.6, 0.8, 1.0, 1.2, 1.6, 2.0]
+CURVE_LINEWIDTH_PROBABILITIES = [0.28, 0.24, 0.2, 0.14, 0.09, 0.05]
 GRID_ENABLED_PROBABILITY = 0.6
 GRID_ALPHA = 0.4
 LOG_X_PROBABILITY = 0.3
@@ -1184,7 +1185,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         style = {
             "color": colors[curve_index % len(colors)],
             "linestyle": linestyles[curve_index % len(linestyles)],
-            "linewidth": linewidths[curve_index % len(linewidths)],
+            "linewidth": float(rng.choice(linewidths, p=CURVE_LINEWIDTH_PROBABILITIES)),
         }
         ax.plot(x_values, y_values, **style)
         dataset_id = f"dataset_{curve_index}"
@@ -1205,7 +1206,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
             label_lines.append("0 " + " ".join(f"{value:.6f}" for value in polygon))
 
     # Add complex annotations (vbars, hbars, arrows, error bars)
-    # Keep minority annotation classes present in all samples to improve recall.
+    # Keep key annotation classes (vbar/hbar/error_bar) present in all samples.
     n_vbars = int(rng.integers(VBAR_COUNT_RANGE[0], VBAR_COUNT_RANGE[1] + 1))
     for vbar_idx in range(n_vbars):
         x_pos = rng.uniform(0.1, 0.9)

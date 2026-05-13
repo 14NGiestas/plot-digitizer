@@ -1,4 +1,4 @@
-# Example resume schedule: set to 253 when continuing a 300-epoch plan from epoch 47.
+# Example resume schedule: set to 253 additional epochs when continuing after epoch 47 in a 300-epoch plan.
 model: yolov8s-seg.pt
 imgsz: 768
 batch: 6
