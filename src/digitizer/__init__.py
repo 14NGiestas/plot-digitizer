@@ -918,12 +918,20 @@ def _render_vbar_mask(fig_size: tuple[float, float], dpi: int, x_pos: float, y_r
     return np.max(buffer[:, :, :3], axis=2) > 200
 
 
-def _render_hbar_mask(fig_size: tuple[float, float], dpi: int, y_pos: float, x_range: tuple[float, float],
-                      height: float, style: dict[str, Any]) -> np.ndarray:
+def _render_hbar_mask(
+    fig_size: tuple[float, float],
+    dpi: int,
+    y_pos: float,
+    x_range: tuple[float, float],
+    height: float,
+    style: dict[str, Any],
+    x_scale: str = "linear",
+) -> np.ndarray:
     """Render a horizontal bar mask."""
     fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
     ax.set_facecolor("black")
     ax.set_xlim(*x_range)
+    ax.set_xscale(x_scale)
     ax.set_ylim(0, 1)
     ax.axhline(y=y_pos, xmin=0, xmax=1, color="white", linewidth=height, linestyle=style.get("linestyle", "-"))
     ax.axis("off")
@@ -966,10 +974,20 @@ def _render_error_bar_mask(fig_size: tuple[float, float], dpi: int, x_pos: float
     return np.max(buffer[:, :, :3], axis=2) > 200
 
 
-def _render_curve_mask(fig_size: tuple[float, float], dpi: int, x_values: np.ndarray, y_values: np.ndarray, x_range: tuple[float, float], y_range: tuple[float, float], style: dict[str, Any]) -> np.ndarray:
+def _render_curve_mask(
+    fig_size: tuple[float, float],
+    dpi: int,
+    x_values: np.ndarray,
+    y_values: np.ndarray,
+    x_range: tuple[float, float],
+    y_range: tuple[float, float],
+    style: dict[str, Any],
+    x_scale: str = "linear",
+) -> np.ndarray:
     fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
     ax.set_facecolor("black")
     ax.set_xlim(*x_range)
+    ax.set_xscale(x_scale)
     ax.set_ylim(*y_range)
     ax.plot(x_values, y_values, color="white", linewidth=style["linewidth"], linestyle=style["linestyle"])
     ax.axis("off")
@@ -1086,16 +1104,24 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
     metadata_path = output_dir / "images" / f"plot_{index:04d}.metadata.json"
     ground_truth_path = output_dir / "ground_truth" / f"plot_{index:04d}.csv"
 
-    x_range = (0.0, float(rng.uniform(6.0, 12.0)))
-    x_values = np.linspace(*x_range, 480)
+    use_log_x = bool(rng.random() < 0.3)
+    x_min = 0.1 if use_log_x else 0.0
+    x_range = (x_min, float(rng.uniform(6.0, 12.0)))
+    x_values = np.geomspace(*x_range, 480) if use_log_x else np.linspace(*x_range, 480)
     
     colors = ["tab:red", "tab:blue", "tab:green", "tab:purple", "tab:orange", "tab:cyan"]
     linestyles = ["-", "--", "-.", ":"]
-    linewidths = [2.0, 2.4, 2.2, 2.6, 1.8, 2.8]
+    linewidths = [0.6, 0.8, 1.0, 1.2, 1.6, 2.0]
 
     fig, ax = plt.subplots(figsize=fig_size, dpi=dpi)
-    if rng.random() > 0.3:
+    if use_log_x:
+        ax.set_xscale("log")
+    if rng.random() > 0.4:
         ax.grid(True, linestyle="--" if rng.random() > 0.5 else ":", alpha=0.4)
+    else:
+        ax.grid(False)
+    for spine in ax.spines.values():
+        spine.set_linestyle(str(rng.choice(["-", "--", ":"])))
     ax.set_xlim(*x_range)
     
     ground_truth_frames: list[pd.DataFrame] = []
@@ -1127,7 +1153,10 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
             })
     else:
         # General plots
-        curve_count = int(rng.integers(MIN_CURVES_PER_PLOT, MAX_CURVES_PER_PLOT + 1))
+        if rng.random() < 0.4:
+            curve_count = int(rng.integers(4, 7))
+        else:
+            curve_count = int(rng.integers(2, 5))
         raw_curves = [_random_curve(x_values, rng) for _ in range(curve_count)]
         all_y = np.concatenate([curve for curve, _ in raw_curves])
         y_margin = max(0.5, float(np.ptp(all_y) * 0.1))
@@ -1147,93 +1176,93 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         dataset_id = f"dataset_{curve_index}"
         curve_descriptors.append({"dataset_id": dataset_id, "curve_type": curve_type, **style})
         ground_truth_frames.append(pd.DataFrame({"dataset_id": dataset_id, "x_real": x_values, "y_real": y_values}))
-        mask = _render_curve_mask(fig_size, dpi, x_values, y_values, x_range, y_range, style)
+        mask = _render_curve_mask(
+            fig_size,
+            dpi,
+            x_values,
+            y_values,
+            x_range,
+            y_range,
+            style,
+            x_scale="log" if use_log_x else "linear",
+        )
         polygon = _mask_to_yolo_polygon(mask)
         if polygon:
             label_lines.append("0 " + " ".join(f"{value:.6f}" for value in polygon))
 
     # Add complex annotations (vbars, hbars, arrows, error bars)
-    if rng.random() > 0.4:  # 60% chance of having annotations
-        # Vertical bars (e.g., high-symmetry points in bandstructures)
-        if rng.random() > 0.5:
-            n_vbars = int(rng.integers(1, 4))
-            for vbar_idx in range(n_vbars):
-                x_pos = rng.uniform(0.1, 0.9)
-                vbar_width = rng.uniform(1.0, 3.0)
-                style = {"linewidth": vbar_width, "linestyle": "-"}
-                mask = _render_vbar_mask(fig_size, dpi, x_pos, y_range, vbar_width, style)
-                polygon = _mask_to_yolo_polygon(mask)
-                if polygon:
-                    class_id = 1  # vbar class
-                    label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
-                    annotation_descriptors.append({
-                        "type": "vbar",
-                        "class_id": class_id,
-                        "x_pos": x_pos,
-                        "description": f"high_symmetry_point_{vbar_idx}"
-                    })
-        
-        # Horizontal bars (e.g., threshold lines, Fermi levels)
-        if rng.random() > 0.6:
-            nhbars = int(rng.integers(1, 3))
-            for hbar_idx in range(nhbars):
-                y_pos_norm = rng.uniform(0.1, 0.9)
-                y_pos = y_range[0] + y_pos_norm * (y_range[1] - y_range[0])
-                hbar_height = rng.uniform(1.0, 2.5)
-                style = {"linewidth": hbar_height, "linestyle": "--"}
-                mask = _render_hbar_mask(fig_size, dpi, y_pos_norm, x_range, hbar_height, style)
-                polygon = _mask_to_yolo_polygon(mask)
-                if polygon:
-                    class_id = 2  # hbar class
-                    label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
-                    annotation_descriptors.append({
-                        "type": "hbar",
-                        "class_id": class_id,
-                        "y_pos": y_pos,
-                        "description": f"reference_line_{hbar_idx}"
-                    })
-        
-        # Arrows (annotations pointing to features)
-        if rng.random() > 0.7:
-            n_arrows = int(rng.integers(1, 3))
-            for arrow_idx in range(n_arrows):
-                start = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
-                end = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
-                style = {"linewidth": rng.uniform(1.5, 3.0)}
-                mask = _render_arrow_mask(fig_size, dpi, start, end, style)
-                polygon = _mask_to_yolo_polygon(mask)
-                if polygon:
-                    class_id = 3  # arrow class
-                    label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
-                    annotation_descriptors.append({
-                        "type": "arrow",
-                        "class_id": class_id,
-                        "start": start,
-                        "end": end,
-                        "description": f"annotation_arrow_{arrow_idx}"
-                    })
-        
-        # Error bars
-        if rng.random() > 0.7:
-            n_error_bars = int(rng.integers(2, 6))
-            for eb_idx in range(n_error_bars):
-                x_pos = rng.uniform(0.1, 0.9)
-                y_pos = rng.uniform(0.2, 0.8)
-                y_err = rng.uniform(0.05, 0.2)
-                style = {"linewidth": rng.uniform(1.0, 2.0), "cap_width": 0.02}
-                mask = _render_error_bar_mask(fig_size, dpi, x_pos, y_pos, y_err, style)
-                polygon = _mask_to_yolo_polygon(mask)
-                if polygon:
-                    class_id = 4  # error_bar class
-                    label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
-                    annotation_descriptors.append({
-                        "type": "error_bar",
-                        "class_id": class_id,
-                        "x_pos": x_pos,
-                        "y_pos": y_pos,
-                        "y_err": y_err,
-                        "description": f"error_bar_{eb_idx}"
-                    })
+    n_vbars = int(rng.integers(1, 4))
+    for vbar_idx in range(n_vbars):
+        x_pos = rng.uniform(0.1, 0.9)
+        vbar_width = rng.uniform(1.0, 3.0)
+        style = {"linewidth": vbar_width, "linestyle": "-"}
+        mask = _render_vbar_mask(fig_size, dpi, x_pos, y_range, vbar_width, style)
+        polygon = _mask_to_yolo_polygon(mask)
+        if polygon:
+            class_id = 1  # vbar class
+            label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
+            annotation_descriptors.append({
+                "type": "vbar",
+                "class_id": class_id,
+                "x_pos": x_pos,
+                "description": f"high_symmetry_point_{vbar_idx}"
+            })
+
+    n_hbars = int(rng.integers(1, 3))
+    for hbar_idx in range(n_hbars):
+        y_pos_norm = rng.uniform(0.1, 0.9)
+        y_pos = y_range[0] + y_pos_norm * (y_range[1] - y_range[0])
+        hbar_height = rng.uniform(1.0, 2.5)
+        style = {"linewidth": hbar_height, "linestyle": "--"}
+        mask = _render_hbar_mask(fig_size, dpi, y_pos_norm, x_range, hbar_height, style, x_scale="log" if use_log_x else "linear")
+        polygon = _mask_to_yolo_polygon(mask)
+        if polygon:
+            class_id = 2  # hbar class
+            label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
+            annotation_descriptors.append({
+                "type": "hbar",
+                "class_id": class_id,
+                "y_pos": y_pos,
+                "description": f"reference_line_{hbar_idx}"
+            })
+
+    n_arrows = int(rng.integers(0, 3))
+    for arrow_idx in range(n_arrows):
+        start = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
+        end = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
+        style = {"linewidth": rng.uniform(1.5, 3.0)}
+        mask = _render_arrow_mask(fig_size, dpi, start, end, style)
+        polygon = _mask_to_yolo_polygon(mask)
+        if polygon:
+            class_id = 3  # arrow class
+            label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
+            annotation_descriptors.append({
+                "type": "arrow",
+                "class_id": class_id,
+                "start": start,
+                "end": end,
+                "description": f"annotation_arrow_{arrow_idx}"
+            })
+
+    n_error_bars = int(rng.integers(2, 6))
+    for eb_idx in range(n_error_bars):
+        x_pos = rng.uniform(0.1, 0.9)
+        y_pos = rng.uniform(0.2, 0.8)
+        y_err = rng.uniform(0.05, 0.2)
+        style = {"linewidth": rng.uniform(1.0, 2.0), "cap_width": 0.02}
+        mask = _render_error_bar_mask(fig_size, dpi, x_pos, y_pos, y_err, style)
+        polygon = _mask_to_yolo_polygon(mask)
+        if polygon:
+            class_id = 4  # error_bar class
+            label_lines.append(f"{class_id} " + " ".join(f"{value:.6f}" for value in polygon))
+            annotation_descriptors.append({
+                "type": "error_bar",
+                "class_id": class_id,
+                "x_pos": x_pos,
+                "y_pos": y_pos,
+                "y_err": y_err,
+                "description": f"error_bar_{eb_idx}"
+            })
 
     fig.tight_layout()
     fig.canvas.draw()
@@ -1259,7 +1288,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         "image": str(image_path),
         "x_range": list(x_range),
         "y_range": list(y_range),
-        "x_scale": "linear",
+        "x_scale": "log" if use_log_x else "linear",
         "y_scale": "linear",
         "invert_y": False,
         "plot_box": plot_box,
@@ -1315,7 +1344,16 @@ def generate_synthetic_dataset(output_dir: Path, count: int, seed: int, image_fo
     )
 
 
-def run_training(dataset_dir: Path, output_dir: Path, epochs: int, imgsz: int, weights: str, batch: int, execute: bool) -> dict[str, Any]:
+def run_training(
+    dataset_dir: Path,
+    output_dir: Path,
+    epochs: int,
+    imgsz: int,
+    weights: str,
+    batch: int,
+    execute: bool,
+    hyp_yaml: Path | None = None,
+) -> dict[str, Any]:
     """Create or execute a YOLO segmentation training job."""
     dataset_yaml = (dataset_dir / "dataset.yaml").resolve()
     if not dataset_yaml.exists():
@@ -1329,6 +1367,11 @@ def run_training(dataset_dir: Path, output_dir: Path, epochs: int, imgsz: int, w
         "project": str(output_dir),
         "task": "segment",
     }
+    if hyp_yaml is not None:
+        hyp_path = hyp_yaml.resolve()
+        if not hyp_path.exists():
+            raise FileNotFoundError(f"Hyperparameter config not found: {hyp_path}")
+        training_plan["cfg"] = str(hyp_path)
     if execute:
         try:
             import torch as _torch  # noqa: F401
@@ -1362,7 +1405,7 @@ def run_training(dataset_dir: Path, output_dir: Path, epochs: int, imgsz: int, w
             ) from exc
 
         model = YOLO(weights)
-        training_plan["result"] = model.train(
+        train_kwargs: dict[str, Any] = {
             data=str(dataset_yaml),
             task="segment",
             epochs=epochs,
@@ -1370,7 +1413,10 @@ def run_training(dataset_dir: Path, output_dir: Path, epochs: int, imgsz: int, w
             batch=batch,
             project=str(output_dir),
             name="synthetic_plot_digitizer",
-        ).save_dir.as_posix()
+        }
+        if hyp_yaml is not None:
+            train_kwargs["cfg"] = str(hyp_yaml.resolve())
+        training_plan["result"] = model.train(**train_kwargs).save_dir.as_posix()
     return training_plan
 
 
@@ -1473,6 +1519,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--epochs", type=int, default=25)
     train_parser.add_argument("--imgsz", type=int, default=640)
     train_parser.add_argument("--batch", type=int, default=8)
+    train_parser.add_argument("--hyp-yaml", type=Path, default=None, help="Optional Ultralytics training override YAML (cfg).")
     train_parser.add_argument("--execute", action="store_true", help="Run training immediately. Otherwise, only print the plan.")
 
     digitize_parser = subparsers.add_parser("digitize", help="Digitize one or more plot images.")
@@ -1520,7 +1567,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "train":
-        plan = run_training(args.dataset_dir, args.output_dir, args.epochs, args.imgsz, args.weights, args.batch, args.execute)
+        plan = run_training(
+            args.dataset_dir,
+            args.output_dir,
+            args.epochs,
+            args.imgsz,
+            args.weights,
+            args.batch,
+            args.execute,
+            args.hyp_yaml,
+        )
         print(json.dumps(plan, indent=2, default=_json_default))
         return 0
 

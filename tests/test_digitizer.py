@@ -246,6 +246,33 @@ class DigitizerWorkflowTests(unittest.TestCase):
                         execute=True,
                     )
 
+    def test_run_training_includes_optional_hyp_yaml_in_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dataset_dir = root / "synthetic"
+            output_dir = root / "runs"
+            hyp_yaml = root / "hyp.yaml"
+            hyp_yaml.write_text("mosaic: 0.0\nclose_mosaic: 0\n")
+            digitizer.generate_synthetic_dataset(
+                dataset_dir,
+                count=1,
+                seed=3,
+                image_format="png",
+                plot_type="general",
+            )
+
+            plan = digitizer.run_training(
+                dataset_dir=dataset_dir,
+                output_dir=output_dir,
+                epochs=5,
+                imgsz=640,
+                weights="yolov8n-seg.pt",
+                batch=2,
+                execute=False,
+                hyp_yaml=hyp_yaml,
+            )
+            self.assertEqual(plan["cfg"], str(hyp_yaml.resolve()))
+
     def test_calibrate_axes_uses_reference_points_for_non_extreme_axis_points(self) -> None:
         image_path = Path("nonexistent.png")
         plot_box = digitizer.PlotBox(left=10, top=10, right=110, bottom=210)
