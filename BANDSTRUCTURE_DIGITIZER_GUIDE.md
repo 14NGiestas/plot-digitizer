@@ -69,8 +69,9 @@ image_name,type,x,y_top,y_bottom,width,y,x_left,x_right,height,start_x,start_y,e
 old_paper_fig1.png,vbar,150,50,700,3,,,,,,,,,
 old_paper_fig1.png,hbar,,,,,400,100,1100,2,,,,,
 old_paper_fig1.png,arrow,,,,5,,,,,200,300,400,500,
+old_paper_fig1.png,error_bar,600,,,,420,,,,,,,,35
 ```
-Each row only uses the columns required by its `type` (`vbar`: `x,y_top,y_bottom`; `hbar`: `y,x_left,x_right`; `arrow`: `start_x,start_y,end_x,end_y`).
+Each row only uses the columns required by its `type` (`vbar`: `x,y_top,y_bottom`; `hbar`: `y,x_left,x_right`; `arrow`: `start_x,start_y,end_x,end_y`; `error_bar`: `x,y,y_error`).
 
 #### JSON Format Example
 Create `annotations.json`:
