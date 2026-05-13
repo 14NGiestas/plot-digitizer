@@ -1,43 +1,43 @@
-```
-# Nix-related
-result
-.nix-*
+```markdown
+# Compiled and build artifacts
+*.pyc
+__pycache__/
 
-# Environment variables
+# Dependencies
+.venv/
+venv/
+node_modules/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
 .env
 .env.local
 *.env.*
 
-# Logs
-*.log
+# Editors
+.vscode/
+.idea/
 
-# Temporary files
-*.tmp
-*~
-.swp
-.swo
-
-# OS-specific
-.DS_Store
-Thumbs.db
-
-# Build artifacts
-dist/
-build/
-target/
-
-# Dependencies
-node_modules/
-__pycache__/
-.venv/
-venv/
-.mypy_cache/
-.pytest_cache/
+# Coverage
 .coverage
 coverage/
 htmlcov/
 
-# Editors
-.vscode/
-.idea/
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Python specific
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyc
+.pytest_cache/
+.mypy_cache/
 ```
