@@ -65,10 +65,10 @@ If you have manually annotated points from real bandstructures/graphs:
 #### CSV Format Example
 Create a CSV file like `manual_annotations.csv`:
 ```csv
-image_name,type,x,y_top,y_bottom,width
-old_paper_fig1.png,vbar,150,50,700,3
-old_paper_fig1.png,hbar,,400,,,3
-old_paper_fig1.png,arrow,200,300,400,500,5
+image_name,type,x,y_top,y_bottom,width,y,x_left,x_right,height,start_x,start_y,end_x,end_y,y_error
+old_paper_fig1.png,vbar,150,50,700,3,,,,,,,,,
+old_paper_fig1.png,hbar,,,,,400,100,1100,2,,,,,
+old_paper_fig1.png,arrow,,,,5,,,,,200,300,400,500,
 ```
 
 #### JSON Format Example

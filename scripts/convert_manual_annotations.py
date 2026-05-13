@@ -328,6 +328,7 @@ def merge_with_dataset(labels_by_image: dict[str, list[str]],
     for subdir in ["images", "ground_truth"]:
         src_subdir = source_dataset_dir / subdir
         dst_subdir = output_dir / subdir
+        dst_subdir.mkdir(parents=True, exist_ok=True)
         if src_subdir.exists():
             for item in src_subdir.iterdir():
                 if item.is_file():

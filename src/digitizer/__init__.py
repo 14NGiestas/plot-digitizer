@@ -870,18 +870,12 @@ def _random_curve(x_values: np.ndarray, rng: np.random.Generator) -> tuple[np.nd
 def _generate_bandstructure_curves(x_values: np.ndarray, rng: np.random.Generator, n_bands: int) -> list[tuple[np.ndarray, str]]:
     """Generate bandstructure-like curves with multiple bands and avoided crossings."""
     bands = []
-    fermi_level = rng.uniform(-0.3, 0.3)
     
     # Generate base parabolic bands
     for band_idx in range(n_bands):
         band_offset = rng.uniform(-1.5, 1.5)
         effective_mass = rng.uniform(0.3, 1.2)
         curvature = rng.choice([-1, 1]) * effective_mass
-        
-        # Create piecewise band structure with high-symmetry points
-        n_segments = len(x_values) // 3
-        if n_segments < 10:
-            n_segments = 10
         
         # Base parabola
         x_centered = x_values - x_values.mean()
