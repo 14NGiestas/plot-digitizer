@@ -15,6 +15,9 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
         with:
@@ -29,5 +32,5 @@ jobs:
           nix --version
           nix flake --help >/dev/null
 
-      - name: Prefetch flake-utils input
-        run: nix flake prefetch github:numtide/flake-utils/11707dc2f618dd54ca8739b309ec4fc024de578b >/dev/null
+      - name: Prefetch all locked flake inputs
+        run: nix flake archive --json . >/dev/null
