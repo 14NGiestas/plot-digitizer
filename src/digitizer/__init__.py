@@ -91,6 +91,9 @@ VBAR_COUNT_RANGE = (1, 3)
 HBAR_COUNT_RANGE = (1, 2)
 ARROW_COUNT_RANGE = (0, 2)
 ERROR_BAR_COUNT_RANGE = (2, 5)
+CURVE_LINEWIDTHS = [0.6, 0.8, 1.0, 1.2, 1.6, 2.0]
+GRID_ENABLED_PROBABILITY = 0.6
+GRID_ALPHA = 0.4
 AxisReferencePair = tuple[tuple[float, float], tuple[float, float]]
 
 
@@ -1119,13 +1122,13 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
     colors = ["tab:red", "tab:blue", "tab:green", "tab:purple", "tab:orange", "tab:cyan"]
     linestyles = ["-", "--", "-.", ":"]
     # Bias toward thinner strokes to improve recall on faint/low-width curves.
-    linewidths = [0.6, 0.8, 1.0, 1.2, 1.6, 2.0]
+    linewidths = CURVE_LINEWIDTHS
 
     fig, ax = plt.subplots(figsize=fig_size, dpi=dpi)
     if use_log_x:
         ax.set_xscale("log")
-    if rng.random() > 0.4:
-        ax.grid(True, linestyle="--" if rng.random() > 0.5 else ":", alpha=0.4)
+    if rng.random() < GRID_ENABLED_PROBABILITY:
+        ax.grid(True, linestyle="--" if rng.random() > 0.5 else ":", alpha=GRID_ALPHA)
     else:
         ax.grid(False)
     for spine in ax.spines.values():
@@ -1200,7 +1203,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
             label_lines.append("0 " + " ".join(f"{value:.6f}" for value in polygon))
 
     # Add complex annotations (vbars, hbars, arrows, error bars)
-    # Keep minority annotation classes present in most samples to improve recall.
+    # Keep minority annotation classes present in all samples to improve recall.
     n_vbars = int(rng.integers(VBAR_COUNT_RANGE[0], VBAR_COUNT_RANGE[1] + 1))
     for vbar_idx in range(n_vbars):
         x_pos = rng.uniform(0.1, 0.9)

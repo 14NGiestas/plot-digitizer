@@ -68,13 +68,14 @@ def run_diagnostics(
     output_dir: Path,
     conf: float,
     iou: float,
+    val_conf: float,
     target_classes: set[int],
     worst_k: int,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     model = YOLO(str(model_path))
 
-    val_result = model.val(data=str(data_yaml), split="val", conf=0.001, iou=iou, plots=True)
+    val_result = model.val(data=str(data_yaml), split="val", conf=val_conf, iou=iou, plots=True)
     box_maps = [float(v) for v in val_result.box.maps] if getattr(val_result, "box", None) is not None else []
     seg_maps = [float(v) for v in val_result.seg.maps] if getattr(val_result, "seg", None) is not None else []
     metrics = {
@@ -105,7 +106,9 @@ def run_diagnostics(
         gt = _load_gt_union_mask(labels_dir / f"{image_path.stem}.txt", image.shape[:2], classes=target_classes)
         pred = _load_pred_union_mask(result, image.shape[:2], classes=target_classes)
         denom = int(gt.sum())
-        recall = float((gt & pred).sum() / denom) if denom > 0 else 1.0
+        if denom == 0:
+            continue
+        recall = float((gt & pred).sum() / denom)
         recalls.append((image_path.name, recall))
 
     fig = plt.figure(figsize=(8, 4))
@@ -152,6 +155,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True, help="Directory for diagnostics artifacts.")
     parser.add_argument("--conf", type=float, default=0.10)
     parser.add_argument("--iou", type=float, default=0.60)
+    parser.add_argument("--val-conf", type=float, default=0.001, help="Validation confidence for per-class metric sweep.")
     parser.add_argument("--target-classes", type=int, nargs="*", default=[0], help="Classes used for FN/FP overlays.")
     parser.add_argument("--worst-k", type=int, default=20, help="Number of worst-recall samples to export.")
     args = parser.parse_args()
@@ -164,6 +168,7 @@ def main() -> int:
         output_dir=args.output_dir,
         conf=args.conf,
         iou=args.iou,
+        val_conf=args.val_conf,
         target_classes=set(args.target_classes),
         worst_k=args.worst_k,
     )

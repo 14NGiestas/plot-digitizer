@@ -146,7 +146,7 @@ digitizer train \
   --epochs 50 \
   --execute
 
-# 3b) Execute a recall-focused run with mosaic disabled and tuned overrides
+# 4) Execute a recall-focused run with mosaic disabled and tuned overrides
 digitizer train \
   --dataset-dir synthetic-data \
   --output-dir training-runs \
@@ -157,7 +157,7 @@ digitizer train \
   --hyp-yaml runs/hyp_plot_recall.yaml \
   --execute
 
-# 4) Continue training from a previous checkpoint (resume)
+# 5) Continue training from a previous checkpoint (resume)
 digitizer train \
   --dataset-dir synthetic-data \
   --output-dir training-runs \
@@ -165,7 +165,7 @@ digitizer train \
   --epochs 30 \
   --execute
 
-# 5) Fine-tune from best checkpoint on updated data
+# 6) Fine-tune from best checkpoint on updated data
 digitizer train \
   --dataset-dir synthetic-data \
   --output-dir training-runs-finetune \
