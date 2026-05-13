@@ -49,7 +49,9 @@ uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu
 ```
 
 After activating that environment, `python -m digitizer ...` always uses the active shell or venv interpreter.
-Inside that same dev shell, `nix run . -- ...` will reuse the active Python only when `digitizer` resolves from the source checkout; otherwise it falls back to the packaged base app. Outside a dev shell, `nix run .` stays base-only and does not include accelerator-specific torch wheels.
+Inside that same dev shell, `nix run . -- ...` reuses the active Python only when `digitizer` resolves from the source checkout.
+Otherwise it falls back to the packaged base app.
+Outside a dev shell, `nix run .` stays base-only and does not include accelerator-specific torch wheels.
 
 > **AMD APU note (Ryzen 7 8745HS / Radeon 780M):** The `rocm` shell automatically sets
 > `HSA_OVERRIDE_GFX_VERSION=11.0.3` so the ROCm runtime recognises the Hawk Point

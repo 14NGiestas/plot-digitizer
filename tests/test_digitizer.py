@@ -168,7 +168,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertGreaterEqual(max_class_id, 0)
             self.assertLess(max_class_id, nc_value)
 
-    def test_run_training_reports_missing_ai_dependencies(self) -> None:
+    def test_run_training_raises_import_error_for_missing_ai_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dataset_dir = Path(tmp) / "synthetic"
             output_dir = Path(tmp) / "runs"

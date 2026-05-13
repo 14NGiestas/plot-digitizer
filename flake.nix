@@ -15,7 +15,7 @@
         };
         python = pkgs.python312;
         commonSystemLibs = with pkgs; [
-          # `xorg.libxcb` was renamed to `libxcb` in current nixpkgs.
+          # `xorg.libxcb` was renamed to `libxcb` in current Nixpkgs.
           libxcb
         ];
         packagedCli = python.pkgs.buildPythonApplication {
@@ -140,9 +140,9 @@
         apps.default = {
           type = "app";
           program = "${pkgs.writeShellScript "digitizer-app" ''
-            # Inside a dev shell, prefer that shell's Python only when it resolves
-            # digitizer from the src-layout checkout/store path rather than some
-            # unrelated global installation.
+            # Inside a dev shell, prefer that shell's Python only when digitizer
+            # resolves from a src-layout path rather than an unrelated global
+            # installation.
             in_nix_shell="''${IN_NIX_SHELL:-}"
             python_available=1
             digitizer_from_src=1
