@@ -48,7 +48,8 @@ uv pip install torch torchvision --index-url https://download.pytorch.org/whl/ro
 uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ```
 
-Use `python -m digitizer ...` (or `nix run . -- ...` from inside the active shell) after activating that environment. The packaged `nix run .` app outside a dev shell stays base-only and does not include accelerator-specific torch wheels.
+After activating that environment, use `python -m digitizer ...` or `nix run . -- ...`.
+Outside a dev shell, `nix run .` stays base-only and does not include accelerator-specific torch wheels.
 
 > **AMD APU note (Ryzen 7 8745HS / Radeon 780M):** The `rocm` shell automatically sets
 > `HSA_OVERRIDE_GFX_VERSION=11.0.3` so the ROCm runtime recognises the Hawk Point
