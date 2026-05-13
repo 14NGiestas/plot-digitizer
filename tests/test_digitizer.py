@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import builtins
 import re
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -212,16 +214,23 @@ class DigitizerWorkflowTests(unittest.TestCase):
             )
 
             real_import = builtins.__import__
+            # Inject a dummy torch module so the preflight torch check passes, then
+            # block only ultralytics to exercise the ultralytics-missing error path.
+            dummy_torch = types.ModuleType("torch")
 
             def import_without_ultralytics(name: str, globals=None, locals=None, fromlist=(), level: int = 0):
-                if name in ("ultralytics", "torch"):
-                    raise ImportError(f"No module named '{name}'")
+                # Only block ultralytics so the preflight torch check passes and we exercise
+                # the ultralytics-missing error path.
+                if name == "ultralytics":
+                    raise ImportError("No module named 'ultralytics'")
+                if name == "torch":
+                    return dummy_torch
                 return real_import(name, globals, locals, fromlist, level)
 
             with patch("builtins.__import__", side_effect=import_without_ultralytics):
                 expected_message = (
-                    "Training requires torch and torchvision, which are not included in the Nix "
-                    "shell by default."
+                    "Training requires ultralytics. Install digitizer with the 'ai' extra: "
+                    "`uv pip install -e \".[ai]\"`"
                 )
                 with self.assertRaisesRegex(ImportError, re.escape(expected_message)):
                     digitizer.run_training(
