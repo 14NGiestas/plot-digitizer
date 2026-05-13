@@ -6,6 +6,10 @@ Automatic AI-assisted plot digitizer available as a Python package.
 
 ### Nix (flake)
 
+`nixpkgs` is intentionally pinned to commit
+`50ab793786d9de88ee30ec4e4c24fb4236fc2674` (same pin used in
+`14NGiestas/mfi`).
+
 Use the shell that matches your hardware:
 
 | Shell | Command | Use case |
