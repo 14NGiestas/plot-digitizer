@@ -13,7 +13,47 @@
           inherit system;
           config.allowUnfree = true; # required for CUDA packages
         };
-        python = pkgs.python312;
+        # Nix package overrides that add ultralytics (and its sub-dependency
+        # ultralytics-thop) to whichever Python package set they are applied
+        # to via `python.override { packageOverrides = aiPackageOverrides; }`.
+        # torch / torchvision are intentionally omitted: they are
+        # GPU-flavour-specific and must be installed separately, e.g.
+        #   pip install torch torchvision \
+        #     --index-url https://download.pytorch.org/whl/<rocm|cu124|cu118>
+        aiPackageOverrides = pyfinal: _pyprev: {
+          ultralytics-thop = pyfinal.buildPythonPackage rec {
+            pname = "ultralytics-thop";
+            version = "2.0.19";
+            format = "wheel";
+            src = pkgs.fetchurl {
+              url = "https://files.pythonhosted.org/packages/6a/74/af3e40919305f16968ea3ab88d84b511d710dd281eb5dafaf4897579dd22/ultralytics_thop-2.0.19-py3-none-any.whl";
+              sha256 = "0fd7jb4gk47xkjh0rlf6awd24ss0xy636wim7ynz5w437gmvm051";
+            };
+            propagatedBuildInputs = with pyfinal; [ numpy ];
+            doCheck = false;
+          };
+          ultralytics = pyfinal.buildPythonPackage rec {
+            pname = "ultralytics";
+            version = "8.3.53";
+            format = "wheel";
+            src = pkgs.fetchurl {
+              url = "https://files.pythonhosted.org/packages/5e/12/bdb1a1c0cd48054fd472f28dac65d7ff88b2f34c9097ac80e47fe9257f3b/ultralytics-8.3.53-py3-none-any.whl";
+              sha256 = "1hj88nk0yvlnc4i15i2qpywakydbxnh1dmd8482m41sy38sx02i4";
+            };
+            propagatedBuildInputs = (with pyfinal; [
+              numpy matplotlib opencv4 pillow pyyaml requests scipy
+              tqdm psutil pandas seaborn
+            ]) ++ [
+              pyfinal."py-cpuinfo"
+              pyfinal."ultralytics-thop"
+            ];
+            doCheck = false;
+          };
+        };
+        # Apply the AI overrides to the base Python so that `aiPythonPkgs
+        # python.pkgs` finds ultralytics as a fallback for GPU shells whose
+        # own package set does not carry it.
+        python = pkgs.python312.override { packageOverrides = aiPackageOverrides; };
         commonSystemLibs = with pkgs; [
           # In this pinned nixpkgs revision, libxcb is under xorg.
           xorg.libxcb
@@ -89,28 +129,6 @@
           exec python -m digitizer "$@"
         '';
 
-        # Bootstrap hook for GPU dev shells: install ultralytics into a
-        # project-local venv ($DIGITIZER_SRC_ROOT/.venv-ai) on first use and
-        # append its site-packages to PYTHONPATH.  nix-provided packages
-        # (numpy, scipy, etc.) remain first in the path so they take
-        # precedence over any pip-installed duplicates.
-        aiVenvHook = ''
-          _pld_ai_venv="$DIGITIZER_SRC_ROOT/.venv-ai"
-          _pld_py_ver=$(python -c "import sys; v=sys.version_info; print(str(v.major)+'.'+str(v.minor))")
-          if [ ! -d "$_pld_ai_venv" ]; then
-            uv venv "$_pld_ai_venv" >/dev/null 2>&1 \
-              || echo "Warning: could not create AI venv at $_pld_ai_venv (check uv is available and the directory is writable)" >&2
-          fi
-          if [ -d "$_pld_ai_venv" ] && ! "$_pld_ai_venv/bin/python" -c "import ultralytics" 2>/dev/null; then
-            uv pip install --quiet --python "$_pld_ai_venv" "ultralytics>=8.3,<8.4" \
-              || echo "Warning: could not auto-install ultralytics (offline?). Run: uv pip install --python $DIGITIZER_SRC_ROOT/.venv-ai 'ultralytics>=8.3,<8.4'" >&2
-          fi
-          if [ -d "$_pld_ai_venv" ]; then
-            export PYTHONPATH="''${PYTHONPATH:+$PYTHONPATH:}$_pld_ai_venv/lib/python$_pld_py_ver/site-packages"
-          fi
-          unset _pld_ai_venv _pld_py_ver
-        '';
-
         # Factory: build a dev shell with optional extra system packages, Python packages, and hook
         mkPyShell = {
           shellPython ? python,
@@ -174,10 +192,10 @@
             # The iGPU shares system RAM (DDR5) as both CPU and GPU memory.
             #
             rocm = mkPyShell {
-              shellPython = rocmPkgs.python312;
+              shellPython = rocmPkgs.python312.override { packageOverrides = aiPackageOverrides; };
               extraPkgs = rocmLibs;
               extraPythonPkgs = aiPythonPkgs python.pkgs;
-              shellHook = aiVenvHook + ''
+              shellHook = ''
                 export ROCM_PATH="${rocmPkgs.rocmPackages.rocm-runtime}"
                 export HIP_PATH="${rocmPkgs.rocmPackages.clr}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath rocmLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
@@ -192,10 +210,10 @@
 
             # NVIDIA GPU — CUDA
             cuda = mkPyShell {
-              shellPython = cudaPkgs.python312;
+              shellPython = cudaPkgs.python312.override { packageOverrides = aiPackageOverrides; };
               extraPkgs = cudaLibs;
               extraPythonPkgs = aiPythonPkgs python.pkgs;
-              shellHook = aiVenvHook + ''
+              shellHook = ''
                 export CUDA_PATH="${cudaPkgs.cudaPackages.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 echo "CUDA shell ready."
@@ -205,10 +223,10 @@
 
             # NVIDIA GPU — CUDA legacy (driver 470 class via CUDA 11.8 userspace)
             cuda-legacy = mkPyShell {
-              shellPython = cudaLegacyPython;
+              shellPython = cudaLegacyPython.override { packageOverrides = aiPackageOverrides; };
               extraPkgs = cudaLegacyLibs;
               extraPythonPkgs = aiPythonPkgs python.pkgs;
-              shellHook = aiVenvHook + ''
+              shellHook = ''
                 export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
                 echo "CUDA legacy shell ready (Python ${cudaLegacyPythonVersion} from ${cudaLegacyPythonSource}, CUDA 11.8 userspace)."

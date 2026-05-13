@@ -20,36 +20,19 @@ Use the shell that matches your hardware:
 | `cuda-legacy` | `nix develop .#cuda-legacy` | NVIDIA legacy driver stack (470-class / CUDA 11.8 userspace) |
 
 Inside these shells, `digitizer` is already available. The GPU shells (`rocm`,
-`cuda`, and `cuda-legacy`) include the AI stack by default (`ultralytics` plus
-accelerator-matched `torch`/`torchvision`).
+`cuda`, and `cuda-legacy`) include `ultralytics` as a proper Nix package by
+default.  `torch` and `torchvision` are **not** bundled — they are
+GPU-flavour-specific and must be installed once after entering the shell:
 
 ```bash
-digitizer --help
-```
+# CUDA 12.4
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 
-One-shot example for CUDA:
+# CUDA 11.8 (cuda-legacy shell)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
-```bash
-nix develop .#cuda --command digitizer --help
-```
-
-Legacy NVIDIA driver example (470-class / CUDA 11.8 userspace):
-
-```bash
-nix develop .#cuda-legacy
-digitizer --help
-```
-
-If you need AI training/inference:
-
-```bash
-# In `nix develop .#rocm` or `nix develop .#cuda`, AI dependencies are already included.
-# In the default CPU shell or a plain virtualenv, install them yourself:
-uv pip install -e ".[ai]"
-# Then install torch + torchvision for your accelerator:
-uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
-# or:
-uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
+# ROCm 6.2
+pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
 ```
 
 > **AMD APU note (Ryzen 7 8745HS / Radeon 780M):** The `rocm` shell automatically sets
