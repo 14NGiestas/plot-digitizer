@@ -121,7 +121,7 @@
         # The venv is activated for the interactive shell session.
         mkAiVenvHook = { venvName, torchIndexUrl }: ''
           _ai_venv="''${DIGITIZER_SRC_ROOT:-$PWD}/.${venvName}"
-          if [ ! -d "$_ai_venv" ] || ! "$_ai_venv/bin/python" -c "import torch; import torchvision" 2>/dev/null; then
+          if [ ! -d "$_ai_venv" ] || ! "$_ai_venv/bin/python" -c "import torch; import torchvision; import numpy" 2>/dev/null; then
             echo "Setting up AI environment (${venvName}) — installing torch/torchvision..."
             python -m venv --system-site-packages "$_ai_venv"
             "$_ai_venv/bin/pip" install --quiet torch torchvision \

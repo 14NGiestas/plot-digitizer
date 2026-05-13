@@ -288,6 +288,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertIn("venv-ai-rocm", flake_text)
         self.assertIn("venv-ai-cuda", flake_text)
         self.assertIn("venv-ai-cuda-legacy", flake_text)
+        self.assertIn('import torch; import torchvision; import numpy', flake_text)
         self.assertIn("rocm6.2", flake_text)
         self.assertIn("cu124", flake_text)
         self.assertIn("cu118", flake_text)
