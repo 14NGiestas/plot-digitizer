@@ -1,5 +1,5 @@
-```markdown
-# Compiled and build artifacts
+```
+# Compiled Python files
 *.pyc
 __pycache__/
 
@@ -8,12 +8,17 @@ __pycache__/
 venv/
 node_modules/
 
-# Logs and temp files
+# Build artifacts
+dist/
+build/
+target/
+
+# Logs and temporary files
 *.log
 *.tmp
 *.swp
 
-# Environment
+# Environment files
 .env
 .env.local
 *.env.*
@@ -22,22 +27,12 @@ node_modules/
 .vscode/
 .idea/
 
-# Coverage
+# Coverage reports
 .coverage
 coverage/
 htmlcov/
 
-# Distribution / packaging
-dist/
-build/
-*.egg-info/
-
-# Python specific
-*.py[cod]
-*$py.class
-*.so
-.Python
-*.pyc
-.pytest_cache/
-.mypy_cache/
+# OS specific
+.DS_Store
+Thumbs.db
 ```

@@ -995,6 +995,89 @@ def _mask_to_yolo_polygon(mask: np.ndarray) -> list[float]:
     return polygon if len(polygon) >= 6 else []
 
 
+def _apply_degradation_filters(image_path: Path, rng: np.random.Generator) -> None:
+    """Apply degradation filters to simulate old/scanned article quality.
+    
+    This function applies various image degradations to improve model resilience
+    when processing real-world images from old scientific articles, including:
+    - JPEG compression artifacts
+    - Gaussian noise (film grain simulation)
+    - Blur (low resolution scanning)
+    - Contrast reduction (faded ink)
+    - Binarization (black and white scans)
+    - Salt-and-pepper noise (dust/scratches)
+    
+    Args:
+        image_path: Path to the image file to degrade (modified in-place)
+        rng: NumPy random generator for reproducible randomness
+    """
+    # Load image
+    image = cv2.imread(str(image_path))
+    if image is None:
+        LOGGER.warning("Could not load image for degradation: %s", image_path)
+        return
+    
+    # Randomly select degradation types (can apply multiple)
+    apply_jpeg = rng.random() > 0.3  # 70% chance
+    apply_noise = rng.random() > 0.4  # 60% chance
+    apply_blur = rng.random() > 0.5  # 50% chance
+    apply_contrast = rng.random() > 0.6  # 40% chance
+    apply_bw = rng.random() > 0.85  # 15% chance (less common)
+    apply_salt_pepper = rng.random() > 0.7  # 30% chance
+    
+    degraded = image.copy()
+    
+    # JPEG compression artifacts (re-encode with low quality)
+    if apply_jpeg:
+        quality = int(rng.uniform(15, 75))  # Low to medium quality
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+        _, encoded = cv2.imencode(".jpg", degraded, encode_param)
+        degraded = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+    
+    # Gaussian noise (simulates film grain or scanner noise)
+    if apply_noise:
+        noise_std = rng.uniform(5, 25)
+        noise = rng.normal(0, noise_std, degraded.shape).astype(np.int16)
+        degraded = np.clip(degraded.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+    
+    # Gaussian blur (simulates low-resolution scanning)
+    if apply_blur:
+        kernel_size = int(rng.choice([3, 5, 7]))
+        degraded = cv2.GaussianBlur(degraded, (kernel_size, kernel_size), 0)
+    
+    # Contrast reduction (simulates faded ink or poor photocopying)
+    if apply_contrast:
+        alpha = rng.uniform(0.6, 0.9)  # Reduce contrast
+        beta = rng.uniform(-10, 10)  # Slight brightness shift
+        degraded = cv2.convertScaleAbs(degraded, alpha=alpha, beta=beta)
+    
+    # Salt-and-pepper noise (simulates dust, scratches, or printing artifacts)
+    if apply_salt_pepper:
+        salt_pepper_prob = rng.uniform(0.005, 0.02)
+        salt_mask = rng.random(degraded.shape[:2]) < salt_pepper_prob
+        pepper_mask = rng.random(degraded.shape[:2]) < salt_pepper_prob
+        for c in range(3):
+            degraded[salt_mask, c] = 255
+            degraded[pepper_mask, c] = 0
+    
+    # Convert to black and white (binary or grayscale)
+    if apply_bw:
+        if rng.random() > 0.5:
+            # Pure binary (thresholded)
+            gray = cv2.cvtColor(degraded, cv2.COLOR_BGR2GRAY)
+            _, degraded_binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            degraded = cv2.cvtColor(degraded_binary, cv2.COLOR_GRAY2BGR)
+        else:
+            # Grayscale only
+            gray = cv2.cvtColor(degraded, cv2.COLOR_BGR2GRAY)
+            degraded = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    
+    # Save degraded image
+    cv2.imwrite(str(image_path), degraded)
+    LOGGER.debug("Applied degradations to %s: jpeg=%s, noise=%s, blur=%s, contrast=%s, bw=%s, salt_pepper=%s",
+                 image_path.name, apply_jpeg, apply_noise, apply_blur, apply_contrast, apply_bw, apply_salt_pepper)
+
+
 def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Generator, image_format: str, 
                              plot_type: str = "general") -> None:
     """Generate a synthetic plot with support for bandstructures and complex annotations."""
@@ -1041,7 +1124,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
             ax.axhline(y=fermi_y, color="gray", linestyle="--", linewidth=1.0, alpha=0.7)
             annotation_descriptors.append({
                 "type": "hbar",
-                "class_id": 3,
+                "class_id": 2,  # hbar class
                 "y_pos": fermi_y,
                 "description": "fermi_level"
             })
@@ -1165,8 +1248,12 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         "right": int(axis_bbox.x1),
         "bottom": int(height_px - axis_bbox.y0),
     }
-    fig.savefig(image_path, dpi=dpi)
+    
+    fig.savefig(image_path, dpi=dpi, format=image_format)
     plt.close(fig)
+    
+    # Apply degradation filters to simulate old/scanned article quality
+    _apply_degradation_filters(image_path, rng)
 
     ground_truth = pd.concat(ground_truth_frames, ignore_index=True)
     ground_truth.to_csv(ground_truth_path, index=False)
@@ -1210,7 +1297,7 @@ def generate_synthetic_dataset(output_dir: Path, count: int, seed: int, image_fo
             current_plot_type = plot_type
         _write_synthetic_example(index, output_dir, rng, image_format, current_plot_type)
     
-    # Updated class names for multi-class segmentation
+    # Updated class names for multi-class segmentation (6 classes)
     dataset_yaml = output_dir / "dataset.yaml"
     dataset_yaml.write_text(
         "\n".join(
@@ -1219,6 +1306,7 @@ def generate_synthetic_dataset(output_dir: Path, count: int, seed: int, image_fo
                 "train: images",
                 "val: images",
                 "test: images",
+                "nc: 6",
                 "names:",
                 "  0: curve",
                 "  1: vbar",
