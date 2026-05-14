@@ -19,15 +19,17 @@ Use the shell that matches your hardware:
 | `cuda` | `nix develop .#cuda` | NVIDIA GPU (CUDA) |
 | `cuda-legacy` | `nix develop .#cuda-legacy` | NVIDIA legacy driver stack (470-class / CUDA 11.8 userspace) |
 
-Inside these shells, `digitizer` is already available. The GPU shells (`rocm`,
-`cuda`, and `cuda-legacy`) include `ultralytics` as a proper Nix package by
-default.  On first entry, each GPU shell **automatically creates an accelerator-specific
-virtual environment** (`.venv-ai-rocm`, `.venv-ai-cuda`, or `.venv-ai-cuda-legacy`)
+Inside these shells, `digitizer` is already available. The AI-capable shells
+(`default` / `cpu-only`, `rocm`, `cuda`, and `cuda-legacy`) include
+`ultralytics` as a proper Nix package by default. On first entry, each shell
+**automatically creates an accelerator-specific virtual environment**
+(`.venv-ai-cpu`, `.venv-ai-rocm`, `.venv-ai-cuda`, or `.venv-ai-cuda-legacy`)
 with `--system-site-packages` and installs `torch`/`torchvision` from the matching
 PyTorch wheel index:
 
 | Shell | PyTorch wheel index |
 |---|---|
+| `default` / `cpu-only` | `https://download.pytorch.org/whl/cpu` |
 | `rocm` | `https://download.pytorch.org/whl/rocm6.2` |
 | `cuda` | `https://download.pytorch.org/whl/cu124` |
 | `cuda-legacy` | `https://download.pytorch.org/whl/cu118` |
