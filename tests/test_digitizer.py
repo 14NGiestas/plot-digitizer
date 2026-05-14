@@ -194,11 +194,11 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 par_files = sorted(f.name for f in (par_dir / subdir).iterdir())
                 self.assertEqual(seq_files, par_files, f"File list mismatch in {subdir}/")
 
-            seq_all_files = sorted(path.relative_to(seq_dir) for path in seq_dir.rglob("*") if path.is_file())
-            par_all_files = sorted(path.relative_to(par_dir) for path in par_dir.rglob("*") if path.is_file())
-            self.assertEqual(seq_all_files, par_all_files)
+            sequential_files = sorted(path.relative_to(seq_dir) for path in seq_dir.rglob("*") if path.is_file())
+            parallel_files = sorted(path.relative_to(par_dir) for path in par_dir.rglob("*") if path.is_file())
+            self.assertEqual(sequential_files, parallel_files)
 
-            for rel_path in seq_all_files:
+            for rel_path in sequential_files:
                 seq_file = seq_dir / rel_path
                 par_file = par_dir / rel_path
                 if rel_path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
@@ -230,12 +230,13 @@ class DigitizerWorkflowTests(unittest.TestCase):
 
     def test_generate_parser_rejects_non_positive_workers(self) -> None:
         parser = digitizer.build_parser()
-        for invalid_workers in ("0", "-2"):
-            stderr = io.StringIO()
-            with redirect_stderr(stderr):
-                with self.assertRaises(SystemExit):
-                    parser.parse_args(["generate", "--output-dir", "/tmp/out", "--workers", invalid_workers])
-            self.assertIn("must be >= 1", stderr.getvalue())
+        with tempfile.TemporaryDirectory() as tmp:
+            for invalid_workers in ("0", "-2"):
+                stderr = io.StringIO()
+                with redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit):
+                        parser.parse_args(["generate", "--output-dir", tmp, "--workers", invalid_workers])
+                self.assertIn("must be >= 1", stderr.getvalue())
 
     def test_run_training_raises_import_error_for_missing_torch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
