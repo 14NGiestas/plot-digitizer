@@ -537,7 +537,13 @@ def calibrate_axes(
     return calibration, metadata
 
 
-def run_ai_segmentation(image: np.ndarray, plot_box: PlotBox, weights: str | None, conf_threshold: float) -> list[SegmentationResult]:
+def run_ai_segmentation(
+    image: np.ndarray,
+    plot_box: PlotBox,
+    weights: str | None,
+    conf_threshold: float,
+    workers: int | None = None,
+) -> list[SegmentationResult]:
     """Run YOLO segmentation if weights are available."""
     if not weights:
         return []
@@ -548,7 +554,10 @@ def run_ai_segmentation(image: np.ndarray, plot_box: PlotBox, weights: str | Non
         return []
 
     model = YOLO(weights)
-    predictions = model.predict(image, conf=conf_threshold, verbose=False)
+    predict_kwargs: dict[str, Any] = {"conf": conf_threshold, "verbose": False}
+    if workers is not None:
+        predict_kwargs["workers"] = workers
+    predictions = model.predict(image, **predict_kwargs)
     results: list[SegmentationResult] = []
     if not predictions:
         return results
@@ -848,6 +857,7 @@ def digitize_image(
     weights: str | None,
     conf_threshold: float,
     create_overlay_image: bool,
+    workers: int | None = None,
     auto_axis_anchors: bool = True,
 ) -> DigitizeResult:
     """Digitize a single image and write CSV/JSON artifacts."""
@@ -869,7 +879,13 @@ def digitize_image(
         auto_axis_anchors=auto_axis_anchors,
     )
 
-    segmentations = run_ai_segmentation(image, plot_box, weights, conf_threshold)
+    segmentations = run_ai_segmentation(
+        image,
+        plot_box,
+        weights,
+        conf_threshold,
+        workers=workers,
+    )
     if not segmentations:
         LOGGER.info("AI segmentation unavailable or empty for %s; using CV fallback.", image_path.name)
         segmentations = run_cv_segmentation(image, plot_box)
@@ -1533,6 +1549,7 @@ def run_training(
     batch: int,
     execute: bool,
     hyp_yaml: Path | None = None,
+    workers: int | None = None,
 ) -> dict[str, Any]:
     """Create or execute a YOLO segmentation training job."""
     dataset_yaml = (dataset_dir / "dataset.yaml").resolve()
@@ -1552,6 +1569,8 @@ def run_training(
         if not hyp_path.exists():
             raise FileNotFoundError(f"Hyperparameter config not found: {hyp_path}")
         training_plan["cfg"] = str(hyp_path)
+    if workers is not None:
+        training_plan["workers"] = workers
     if execute:
         try:
             import torch as _torch  # noqa: F401
@@ -1594,6 +1613,8 @@ def run_training(
             "project": str(output_dir),
             "name": "synthetic_plot_digitizer",
         }
+        if workers is not None:
+            train_kwargs["workers"] = workers
         if hyp_path is not None:
             train_kwargs["cfg"] = str(hyp_path)
         training_plan["result"] = model.train(**train_kwargs).save_dir.as_posix()
@@ -1715,6 +1736,13 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--batch", type=int, default=8)
     train_parser.add_argument("--hyp-yaml", type=Path, default=None, help="Optional Ultralytics training override YAML (cfg).")
     train_parser.add_argument("--execute", action="store_true", help="Run training immediately. Otherwise, only print the plan.")
+    train_parser.add_argument(
+        "--workers",
+        type=_parse_positive_int,
+        default=None,
+        metavar="N",
+        help="Number of DataLoader worker processes for training (default: Ultralytics default). Set to the number of CPU cores available, e.g. --workers 16 for a 16-core system.",
+    )
 
     digitize_parser = subparsers.add_parser("digitize", help="Digitize one or more plot images.")
     digitize_parser.add_argument("inputs", nargs="+", help="Input image files or directories.")
@@ -1738,6 +1766,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     digitize_parser.add_argument("--weights", default=None, help="YOLO .pt or .onnx segmentation weights.")
     digitize_parser.add_argument("--conf-threshold", type=float, default=0.25)
+    digitize_parser.add_argument(
+        "--workers",
+        type=_parse_positive_int,
+        default=None,
+        metavar="N",
+        help="Number of DataLoader worker processes for AI digitizing inference (default: Ultralytics default). Set to CPU core count, e.g. --workers 16 for a 16-core system.",
+    )
     digitize_parser.add_argument("--overlay", action="store_true", help="Write overlay images.")
 
     validate_parser = subparsers.add_parser("validate", help="Validate a digitized CSV against ground truth.")
@@ -1778,6 +1813,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.batch,
             args.execute,
             args.hyp_yaml,
+            workers=args.workers,
         )
         print(json.dumps(plan, indent=2, default=_json_default))
         return 0
@@ -1816,6 +1852,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 weights=args.weights,
                 conf_threshold=args.conf_threshold,
                 create_overlay_image=args.overlay,
+                workers=args.workers,
                 auto_axis_anchors=not args.disable_auto_axis_anchors,
             )
             results.append(
