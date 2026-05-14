@@ -329,8 +329,9 @@ def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair
     dragging_index: int | None = None
     cancelled = False
     click_radius = max(10.0, float(max(image_width, image_height)) * INTERACTIVE_CLICK_RADIUS_SCALE)
-    zoom_half_size = float(
-        max(INTERACTIVE_ZOOM_HALF_SIZE_MIN, int(max(image_width, image_height) * INTERACTIVE_ZOOM_HALF_SIZE_SCALE))
+    zoom_half_size = max(
+        float(INTERACTIVE_ZOOM_HALF_SIZE_MIN),
+        float(max(image_width, image_height)) * INTERACTIVE_ZOOM_HALF_SIZE_SCALE,
     )
 
     def _distance(x0: float, y0: float, x1: float, y1: float) -> float:
@@ -376,7 +377,7 @@ def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair
         point_artists = []
         label_artists = []
         for index, (x_coord, y_coord) in enumerate(points):
-            point_artist, = axis.plot(
+            point_artist = axis.plot(
                 x_coord,
                 y_coord,
                 marker="o",
@@ -385,7 +386,7 @@ def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair
                 markeredgecolor="white",
                 markeredgewidth=0.8,
                 linestyle="None",
-            )
+            )[0]
             label_artist = axis.text(
                 x_coord + 6.0,
                 y_coord - 6.0,
