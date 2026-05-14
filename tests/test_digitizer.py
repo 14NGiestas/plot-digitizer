@@ -148,10 +148,9 @@ class DigitizerWorkflowTests(unittest.TestCase):
         original = ((20.25, -1.5), (120.75, 10.125))
         formatted = digitizer._format_reference_pair_cli_value(original)
         parsed = digitizer.parse_reference_pair(formatted, "x")
-        self.assertAlmostEqual(parsed[0][0], original[0][0], places=6)
-        self.assertAlmostEqual(parsed[0][1], original[0][1], places=12)
-        self.assertAlmostEqual(parsed[1][0], original[1][0], places=6)
-        self.assertAlmostEqual(parsed[1][1], original[1][1], places=12)
+        for parsed_point, original_point in zip(parsed, original, strict=True):
+            self.assertAlmostEqual(parsed_point[0], original_point[0], places=6)
+            self.assertAlmostEqual(parsed_point[1], original_point[1], places=12)
 
     def test_main_logs_reproducible_args_after_interactive_axis_selection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

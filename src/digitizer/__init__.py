@@ -73,6 +73,19 @@ VALIDATION_THRESHOLD = 0.05
 MAX_REPLOT_POINTS = 600
 MAX_REPLOT_LEGEND_DATASETS = 10
 DEFAULT_GENERATE_WORKERS_CAP = 8
+INTERACTIVE_CLICK_RADIUS_SCALE = 0.02
+INTERACTIVE_ZOOM_HALF_SIZE_SCALE = 0.06
+INTERACTIVE_ZOOM_HALF_SIZE_MIN = 24
+INTERACTIVE_SELECTION_HELP_TEXT = (
+    "Left click to add/select and drag points. Right click removes nearest point. "
+    "Press Enter when 4 points are set (X1, X2, Y1, Y2). Press Esc to cancel."
+)
+INTERACTIVE_SELECTION_LIMIT_REACHED_TEXT = (
+    "Already selected 4 points. Drag existing points or right-click to remove one."
+)
+INTERACTIVE_SELECTION_REMOVED_TEXT = (
+    "Point removed. Left click to add/select and drag. Right click removes nearest point."
+)
 SINE_AMPLITUDE_RANGE = (0.5, 1.8)
 SINE_FREQUENCY_RANGE = (0.6, 2.4)
 SINE_OFFSET_RANGE = (-0.75, 0.75)
@@ -304,8 +317,7 @@ def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair
     info_text = figure.text(
         0.02,
         0.02,
-        "Left click to add/select and drag points. Right click removes nearest point. "
-        "Press Enter when 4 points are set (X1, X2, Y1, Y2). Press Esc to cancel.",
+        INTERACTIVE_SELECTION_HELP_TEXT,
         fontsize=9,
     )
 
@@ -316,8 +328,8 @@ def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair
     label_artists: list[Any] = []
     dragging_index: int | None = None
     cancelled = False
-    click_radius = max(10.0, float(max(image_width, image_height)) * 0.02)
-    zoom_half_size = max(24, int(max(image_width, image_height) * 0.06))
+    click_radius = max(10.0, float(max(image_width, image_height)) * INTERACTIVE_CLICK_RADIUS_SCALE)
+    zoom_half_size = max(INTERACTIVE_ZOOM_HALF_SIZE_MIN, int(max(image_width, image_height) * INTERACTIVE_ZOOM_HALF_SIZE_SCALE))
 
     def _distance(x0: float, y0: float, x1: float, y1: float) -> float:
         return float(np.hypot(x1 - x0, y1 - y0))
@@ -405,15 +417,13 @@ def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair
                 points.append((float(event.xdata), float(event.ydata)))
                 dragging_index = len(points) - 1
             else:
-                info_text.set_text("Already selected 4 points. Drag existing points or right-click to remove one.")
+                info_text.set_text(INTERACTIVE_SELECTION_LIMIT_REACHED_TEXT)
                 dragging_index = nearest_index if nearest_index is not None else None
             _redraw(dragging_index)
         elif event.button == 3 and nearest_index is not None and nearest_distance <= click_radius:
             points.pop(nearest_index)
             dragging_index = None
-            info_text.set_text(
-                "Point removed. Left click to add/select and drag. Right click removes nearest point."
-            )
+            info_text.set_text(INTERACTIVE_SELECTION_REMOVED_TEXT)
             _redraw(None)
 
     def _on_motion(event: Any) -> None:
