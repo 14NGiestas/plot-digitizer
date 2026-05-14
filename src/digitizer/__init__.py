@@ -330,8 +330,8 @@ def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair
     cancelled = False
     click_radius = max(10.0, float(max(image_width, image_height)) * INTERACTIVE_CLICK_RADIUS_SCALE)
     zoom_half_size = max(
-        float(INTERACTIVE_ZOOM_HALF_SIZE_MIN),
-        float(max(image_width, image_height)) * INTERACTIVE_ZOOM_HALF_SIZE_SCALE,
+        INTERACTIVE_ZOOM_HALF_SIZE_MIN,
+        max(image_width, image_height) * INTERACTIVE_ZOOM_HALF_SIZE_SCALE,
     )
 
     def _distance(x0: float, y0: float, x1: float, y1: float) -> float:
@@ -358,9 +358,9 @@ def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair
             return
         x_coord, y_coord = points[active_index]
         x_min = max(0.0, x_coord - zoom_half_size)
-        x_max = min(float(image_width - 1), x_coord + zoom_half_size)
+        x_max = min(image_width - 1, x_coord + zoom_half_size)
         y_min = max(0.0, y_coord - zoom_half_size)
-        y_max = min(float(image_height - 1), y_coord + zoom_half_size)
+        y_max = min(image_height - 1, y_coord + zoom_half_size)
         zoom_axis.set_xlim(x_min, x_max)
         zoom_axis.set_ylim(y_max, y_min)
         zoom_axis.set_title(f"Zoom: {point_labels[active_index]} ({x_coord:.1f}, {y_coord:.1f})", fontsize=10)

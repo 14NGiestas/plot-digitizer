@@ -151,7 +151,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
         for parsed_point, original_point in zip(parsed, original, strict=True):
             # Formatter uses .6f for pixel values and .15g for real values.
             self.assertAlmostEqual(parsed_point[0], original_point[0], places=6)
-            self.assertAlmostEqual(parsed_point[1], original_point[1], places=12)
+            self.assertAlmostEqual(parsed_point[1], original_point[1], places=14)
 
     def test_main_logs_reproducible_args_after_interactive_axis_selection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
