@@ -238,6 +238,46 @@ class DigitizerWorkflowTests(unittest.TestCase):
                         parser.parse_args(["generate", "--output-dir", tmp, "--workers", invalid_workers])
                 self.assertIn("must be >= 1", stderr.getvalue())
 
+    def test_digitize_parser_rejects_non_positive_workers(self) -> None:
+        parser = digitizer.build_parser()
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = Path(tmp) / "input.png"
+            image_path.write_bytes(b"stub")
+            for invalid_workers in ("0", "-2"):
+                stderr = io.StringIO()
+                with redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit):
+                        parser.parse_args(["digitize", str(image_path), "--workers", invalid_workers])
+                self.assertIn("must be >= 1", stderr.getvalue())
+
+    def test_run_ai_segmentation_forwards_workers_to_predict(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        class FakeYOLO:
+            def __init__(self, _weights: str):
+                pass
+
+            def predict(self, _image: np.ndarray, **kwargs: object) -> list[object]:
+                calls.append(kwargs)
+                return []
+
+        fake_ultralytics = types.SimpleNamespace(YOLO=FakeYOLO)
+        image = np.zeros((16, 16, 3), dtype=np.uint8)
+        plot_box = digitizer.PlotBox(left=0, top=0, right=16, bottom=16)
+
+        with patch.dict(sys.modules, {"ultralytics": fake_ultralytics}):
+            result = digitizer.run_ai_segmentation(
+                image=image,
+                plot_box=plot_box,
+                weights="fake.pt",
+                conf_threshold=0.25,
+                workers=16,
+            )
+
+        self.assertEqual(result, [])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["workers"], 16)
+
     def test_run_training_raises_import_error_for_missing_torch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dataset_dir = Path(tmp) / "synthetic"
