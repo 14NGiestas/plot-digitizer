@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import logging
 import math
@@ -71,6 +72,7 @@ MAX_CURVES_PER_PLOT = 3
 VALIDATION_THRESHOLD = 0.05
 MAX_REPLOT_POINTS = 600
 MAX_REPLOT_LEGEND_DATASETS = 10
+DEFAULT_GENERATE_WORKERS_CAP = 8
 SINE_AMPLITUDE_RANGE = (0.5, 1.8)
 SINE_FREQUENCY_RANGE = (0.6, 2.4)
 SINE_OFFSET_RANGE = (-0.75, 0.75)
@@ -1425,28 +1427,81 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
     metadata_path.write_text(json.dumps(metadata, indent=2))
 
 
-def generate_synthetic_dataset(output_dir: Path, count: int, seed: int, image_format: str, 
-                                plot_type: str = "mixed") -> None:
-    """Generate a synthetic plot dataset with YOLO segmentation labels.
-    
-    Args:
-        output_dir: Output directory for the dataset
-        count: Number of images to generate
-        seed: Random seed for reproducibility
-        image_format: Image format (png or jpg)
-        plot_type: Type of plots to generate - "general", "bandstructure", or "mixed"
+SampleGenerationTask = tuple[int, Path, np.random.SeedSequence, str, str]
+
+
+def _generate_one_sample(args: SampleGenerationTask) -> None:
+    """Worker function for parallel synthetic sample generation.
+
+    Accepts a tuple so it can be passed through :func:`ProcessPoolExecutor.map`
+    without requiring Python 3.12+ keyword-argument pickling.
     """
+    index, output_dir, child_seed, image_format, plot_type = args
+    rng = np.random.default_rng(child_seed)
+    _write_synthetic_example(index, output_dir, rng, image_format, plot_type)
+
+
+def generate_synthetic_dataset(
+    output_dir: Path,
+    count: int,
+    seed: int,
+    image_format: str,
+    plot_type: str = "mixed",
+    workers: int | None = None,
+) -> None:
+    """Generate a synthetic plot dataset with YOLO segmentation labels.
+
+    Samples are generated in parallel using :class:`ProcessPoolExecutor` by
+    default (one process per CPU core).  Each sample receives an independent
+    :class:`numpy.random.SeedSequence` child so results are fully deterministic
+    and identical regardless of the number of workers used.
+
+    Args:
+        output_dir: Output directory for the dataset.
+        count: Number of images to generate.
+        seed: Random seed for reproducibility.
+        image_format: Image format (``"png"`` or ``"jpg"``).
+        plot_type: Type of plots to generate – ``"general"``,
+            ``"bandstructure"``, or ``"mixed"``.
+        workers: Number of worker processes.  ``None`` (default) uses
+            ``min(os.cpu_count(), count, 8)``. Pass ``1`` for strictly
+            sequential execution (useful for debugging). The cap keeps
+            process and memory overhead reasonable on high-core systems.
+    """
+    if workers is not None and workers < 1:
+        raise ValueError(f"workers must be >= 1, got {workers}")
+
     output_dir.mkdir(parents=True, exist_ok=True)
     for subdir in ("images", "labels", "ground_truth"):
         (output_dir / subdir).mkdir(exist_ok=True)
-    rng = np.random.default_rng(seed)
-    
-    for index in range(count):
-        if plot_type == "mixed":
-            current_plot_type = rng.choice(["general", "bandstructure"])
-        else:
-            current_plot_type = plot_type
-        _write_synthetic_example(index, output_dir, rng, image_format, current_plot_type)
+
+    # Derive independent child seeds from the master SeedSequence.
+    # children[0] drives plot-type assignment; children[1:] drive per-sample rngs.
+    ss = np.random.SeedSequence(seed)
+    all_children = ss.spawn(count + 1)
+    type_rng = np.random.default_rng(all_children[0])
+    sample_seeds = all_children[1:]
+
+    plot_types: list[str] = [
+        type_rng.choice(["general", "bandstructure"]) if plot_type == "mixed" else plot_type
+        for _ in range(count)
+    ]
+
+    tasks: list[SampleGenerationTask] = [
+        (i, output_dir, sample_seeds[i], image_format, plot_types[i])
+        for i in range(count)
+    ]
+
+    cpu_count = os.cpu_count() or 1
+    n_workers = workers if workers is not None else min(cpu_count, count, DEFAULT_GENERATE_WORKERS_CAP)
+    if n_workers <= 1:
+        for task in tasks:
+            _generate_one_sample(task)
+    else:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=n_workers) as executor:
+            # Consume the iterator to propagate any worker exceptions.
+            for _ in executor.map(_generate_one_sample, tasks):
+                pass
     
     # Multi-class segmentation labels must stay contiguous from 0..nc-1
     dataset_yaml = output_dir / "dataset.yaml"
@@ -1623,6 +1678,13 @@ def validate_digitization(prediction_csv: Path, truth_csv: Path, output_json: Pa
     return summary
 
 
+def _parse_positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser."""
     parser = argparse.ArgumentParser(description="Automatic AI-assisted plot digitizer.")
@@ -1636,6 +1698,13 @@ def build_parser() -> argparse.ArgumentParser:
     generate_parser.add_argument("--image-format", default="png", choices=["png", "jpg"])
     generate_parser.add_argument("--plot-type", default="mixed", choices=["general", "bandstructure", "mixed"],
                                   help="Type of plots: general (standard curves), bandstructure (physics band diagrams), or mixed")
+    generate_parser.add_argument(
+        "--workers",
+        type=_parse_positive_int,
+        default=None,
+        metavar="N",
+        help="Number of worker processes for parallel generation (default: min(os.cpu_count(), count, 8)). Use 1 for sequential.",
+    )
 
     train_parser = subparsers.add_parser("train", help="Train or plan a YOLO segmentation model.")
     train_parser.add_argument("--dataset-dir", type=Path, required=True)
@@ -1692,7 +1761,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     configure_logging(args.verbose)
 
     if args.command == "generate":
-        generate_synthetic_dataset(args.output_dir, args.count, args.seed, args.image_format, args.plot_type)
+        generate_synthetic_dataset(
+            args.output_dir, args.count, args.seed, args.image_format, args.plot_type,
+            workers=args.workers,
+        )
         LOGGER.info("Generated %s synthetic plots (%s) in %s", args.count, args.plot_type, args.output_dir)
         return 0
 

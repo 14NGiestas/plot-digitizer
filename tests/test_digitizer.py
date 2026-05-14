@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import builtins
+import io
 import re
 import sys
 import tempfile
 import types
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
@@ -172,6 +174,69 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     max_class_id = max(max_class_id, int(raw_line.split()[0]))
             self.assertGreaterEqual(max_class_id, 0)
             self.assertLess(max_class_id, nc_value)
+
+    def test_parallel_generation_matches_sequential(self) -> None:
+        """Parallel generation (workers=2) must produce identical files to sequential (workers=1)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seq_dir = root / "sequential"
+            par_dir = root / "parallel"
+
+            digitizer.generate_synthetic_dataset(
+                seq_dir, count=4, seed=99, image_format="png", plot_type="mixed", workers=1
+            )
+            digitizer.generate_synthetic_dataset(
+                par_dir, count=4, seed=99, image_format="png", plot_type="mixed", workers=2
+            )
+
+            for subdir in ("images", "labels", "ground_truth"):
+                seq_files = sorted(f.name for f in (seq_dir / subdir).iterdir())
+                par_files = sorted(f.name for f in (par_dir / subdir).iterdir())
+                self.assertEqual(seq_files, par_files, f"File list mismatch in {subdir}/")
+
+            seq_relative_paths = sorted(path.relative_to(seq_dir) for path in seq_dir.rglob("*") if path.is_file())
+            par_relative_paths = sorted(path.relative_to(par_dir) for path in par_dir.rglob("*") if path.is_file())
+            self.assertEqual(seq_relative_paths, par_relative_paths)
+
+            for rel_path in seq_relative_paths:
+                seq_file = seq_dir / rel_path
+                par_file = par_dir / rel_path
+                if rel_path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
+                    self.assertEqual(
+                        seq_file.read_bytes(),
+                        par_file.read_bytes(),
+                        f"File content differs for {rel_path}",
+                    )
+                else:
+                    # Several generated text files embed absolute output paths; normalize root prefixes
+                    # so content comparisons focus on deterministic data rather than directory names.
+                    seq_text = seq_file.read_text().replace(str(seq_dir), "__DATASET_ROOT__")
+                    par_text = par_file.read_text().replace(str(par_dir), "__DATASET_ROOT__")
+                    self.assertEqual(seq_text, par_text, f"File content differs for {rel_path}")
+
+    def test_generate_rejects_non_positive_workers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_dir = Path(tmp) / "synthetic"
+
+            with self.assertRaisesRegex(ValueError, "workers must be >= 1"):
+                digitizer.generate_synthetic_dataset(
+                    dataset_dir, count=1, seed=7, image_format="png", plot_type="mixed", workers=0
+                )
+
+            with self.assertRaisesRegex(ValueError, "workers must be >= 1"):
+                digitizer.generate_synthetic_dataset(
+                    dataset_dir, count=1, seed=7, image_format="png", plot_type="mixed", workers=-2
+                )
+
+    def test_generate_parser_rejects_non_positive_workers(self) -> None:
+        parser = digitizer.build_parser()
+        with tempfile.TemporaryDirectory() as tmp:
+            for invalid_workers in ("0", "-2"):
+                stderr = io.StringIO()
+                with redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit):
+                        parser.parse_args(["generate", "--output-dir", tmp, "--workers", invalid_workers])
+                self.assertIn("must be >= 1", stderr.getvalue())
 
     def test_run_training_raises_import_error_for_missing_torch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
