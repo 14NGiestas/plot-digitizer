@@ -225,10 +225,21 @@
                 export ROCM_PATH="${rocmPkgs.rocmPackages.rocm-runtime}"
                 export HIP_PATH="${rocmPkgs.rocmPackages.clr}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath rocmLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+                export TORCH_USE_HIP_DSA=1
                 # Hawk Point APU (Ryzen 8000-series) integrates Radeon 780M — gfx1103.
                 # HSA_OVERRIDE_GFX_VERSION forces the correct ISA when the ROCm runtime
                 # cannot auto-detect the iGPU (common on newer APUs).
-                export HSA_OVERRIDE_GFX_VERSION="11.0.3"
+                # AMD Ryzen 7 PRO 8700GE is gfx1103 which is not compatible, but treating it as gfx1100 works
+                export AMD_SERIALIZE_KERNEL=1
+                export ROCM_VERSION=6.2.3
+                export PYTORCH_ROCM_ARCH="gfx1100"
+                export GFX_ARCH=gfx1100
+                export HSA_OVERRIDE_GFX_VERSION=11.0.0
+                export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=0
+                export TORCH_BLAS_PREFER_HIPBLASLT=0
+                export HIP_VISIBLE_DEVICES=0
+                export HIP_MEMORY_POOL_LIMIT=16000000000
+                export PYTORCH_HIP_ALLOC_CONF=garbage_collection_threshold:0.9,max_split_size_mb:512
               '' + mkAiVenvHook {
                 venvName = "venv-ai-rocm";
                 torchIndexUrl = "https://download.pytorch.org/whl/rocm6.2";
