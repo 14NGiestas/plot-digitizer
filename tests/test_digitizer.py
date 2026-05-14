@@ -378,6 +378,59 @@ class DigitizerWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(plan["cfg"], str(hyp_yaml.resolve()))
 
+    def test_run_training_execute_applies_workers_to_torch_threads_and_trainer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dataset_dir = root / "synthetic"
+            output_dir = root / "runs"
+            digitizer.generate_synthetic_dataset(
+                dataset_dir,
+                count=1,
+                seed=3,
+                image_format="png",
+                plot_type="general",
+            )
+
+            calls: dict[str, object] = {}
+
+            class FakeTorch:
+                @staticmethod
+                def set_num_threads(value: int) -> None:
+                    calls["num_threads"] = value
+
+                @staticmethod
+                def set_num_interop_threads(value: int) -> None:
+                    calls["num_interop_threads"] = value
+
+            class FakeTrainResult:
+                save_dir = Path(tmp) / "yolo-run"
+
+            class FakeYOLO:
+                def __init__(self, _weights: str):
+                    pass
+
+                def train(self, **kwargs: object) -> FakeTrainResult:
+                    calls["train_kwargs"] = kwargs
+                    return FakeTrainResult()
+
+            fake_ultralytics = types.SimpleNamespace(YOLO=FakeYOLO)
+            with patch.dict(sys.modules, {"torch": FakeTorch, "ultralytics": fake_ultralytics}):
+                plan = digitizer.run_training(
+                    dataset_dir=dataset_dir,
+                    output_dir=output_dir,
+                    epochs=1,
+                    imgsz=640,
+                    weights="yolov8n-seg.pt",
+                    batch=1,
+                    execute=True,
+                    workers=16,
+                )
+
+            self.assertEqual(calls["num_threads"], 16)
+            self.assertEqual(calls["num_interop_threads"], 16)
+            self.assertEqual(calls["train_kwargs"]["workers"], 16)
+            self.assertEqual(plan["workers"], 16)
+
     def test_calibrate_axes_uses_reference_points_for_non_extreme_axis_points(self) -> None:
         image_path = Path("nonexistent.png")
         plot_box = digitizer.PlotBox(left=10, top=10, right=110, bottom=210)
