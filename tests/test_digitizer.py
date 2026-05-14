@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import builtins
+import io
 import re
 import sys
 import tempfile
 import types
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
@@ -226,9 +228,12 @@ class DigitizerWorkflowTests(unittest.TestCase):
 
     def test_generate_parser_rejects_non_positive_workers(self) -> None:
         parser = digitizer.build_parser()
-
-        with self.assertRaises(SystemExit):
-            parser.parse_args(["generate", "--output-dir", "/tmp/out", "--workers", "0"])
+        for invalid_workers in ("0", "-2"):
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                with self.assertRaises(SystemExit):
+                    parser.parse_args(["generate", "--output-dir", "/tmp/out", "--workers", invalid_workers])
+            self.assertIn("must be >= 1", stderr.getvalue())
 
     def test_run_training_raises_import_error_for_missing_torch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
