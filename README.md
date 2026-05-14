@@ -232,6 +232,19 @@ digitizer digitize real-plots/plot.png \
   --weights training-runs/synthetic_plot_digitizer/weights/best.pt
 ```
 
+Interactive selection supports point editing:
+
+- Left click to add/select points, then drag to move them precisely.
+- Right click near a point to remove it and re-place it.
+- A zoom panel shows a magnified view of the currently selected point.
+- Press `Enter` when all 4 points are set (`X1, X2, Y1, Y2`), or `Esc` to cancel.
+
+After interactive selection completes, the CLI logs exact reusable arguments:
+
+```text
+--x-reference "<px1>:<real1>,<px2>:<real2>" --y-reference "<px1>:<real1>,<px2>:<real2>"
+```
+
 ### Using without installation (uv run from Git)
 
 You can also run commands directly from the Git repository without installing:

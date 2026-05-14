@@ -144,6 +144,65 @@ class DigitizerWorkflowTests(unittest.TestCase):
         parsed = digitizer.parse_reference_pair("20:0,120:10", "x")
         self.assertEqual(parsed, ((20.0, 0.0), (120.0, 10.0)))
 
+    def test_format_reference_pair_cli_value_is_reusable_by_parser(self) -> None:
+        original = ((20.25, -1.5), (120.75, 10.125))
+        formatted = digitizer._format_reference_pair_cli_value(original)
+        parsed = digitizer.parse_reference_pair(formatted, "x")
+        self.assertAlmostEqual(parsed[0][0], original[0][0], places=6)
+        self.assertAlmostEqual(parsed[0][1], original[0][1], places=12)
+        self.assertAlmostEqual(parsed[1][0], original[1][0], places=6)
+        self.assertAlmostEqual(parsed[1][1], original[1][1], places=12)
+
+    def test_main_logs_reproducible_args_after_interactive_axis_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            image_path = root / "plot.png"
+            image_path.write_bytes(b"stub")
+            output_dir = root / "digitized"
+            fake_result = digitizer.DigitizeResult(
+                csv_path=output_dir / "plot.digitized.csv",
+                replot_csv_path=output_dir / "plot.replot.csv",
+                metadata_path=output_dir / "plot.metadata.json",
+                replot_path=output_dir / "plot.replot.png",
+                overlay_path=None,
+                point_count=1,
+                dataset_count=1,
+            )
+            x_reference = ((10.0, 0.0), (90.0, 10.0))
+            y_reference = ((180.0, 0.0), (20.0, 100.0))
+
+            with (
+                patch("digitizer._set_matplotlib_backend", return_value=None),
+                patch("digitizer.interactive_reference_selection", return_value=(x_reference, y_reference)),
+                patch("digitizer.digitize_image", return_value=fake_result),
+                patch.object(digitizer.LOGGER, "info") as mock_info,
+            ):
+                exit_code = digitizer.main(
+                    [
+                        "digitize",
+                        str(image_path),
+                        "--output-dir",
+                        str(output_dir),
+                        "--interactive-axis-selection",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            interactive_log_calls = [
+                call
+                for call in mock_info.call_args_list
+                if "Interactive axis selection complete. Reuse with:" in call.args[0]
+            ]
+            self.assertEqual(len(interactive_log_calls), 1)
+            self.assertEqual(
+                interactive_log_calls[0].args[1],
+                digitizer._format_reference_pair_cli_value(x_reference),
+            )
+            self.assertEqual(
+                interactive_log_calls[0].args[2],
+                digitizer._format_reference_pair_cli_value(y_reference),
+            )
+
     def test_generate_writes_consistent_multiclass_dataset_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dataset_dir = Path(tmp) / "synthetic"
