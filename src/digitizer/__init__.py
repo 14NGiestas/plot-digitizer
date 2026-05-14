@@ -1475,7 +1475,7 @@ def generate_synthetic_dataset(
     sample_seeds = all_children[1:]
 
     plot_types: list[str] = [
-        str(type_rng.choice(["general", "bandstructure"])) if plot_type == "mixed" else plot_type
+        type_rng.choice(["general", "bandstructure"]) if plot_type == "mixed" else plot_type
         for _ in range(count)
     ]
 
