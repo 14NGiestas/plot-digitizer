@@ -1573,7 +1573,7 @@ def run_training(
         training_plan["workers"] = workers
     if execute:
         try:
-            import torch as _torch  # noqa: F401
+            import torch as _torch
         except ImportError:  # pragma: no cover - depends on optional dependency setup
             import re as _re
             cuda_path = os.environ.get("CUDA_PATH", "")
@@ -1595,6 +1595,15 @@ def run_training(
                 f"  pip install torch torchvision --index-url {index_url}\n"
                 "Then rerun the command. See the README for all accelerator options."
             )
+        if workers is not None:
+            _torch.set_num_threads(workers)
+            try:
+                _torch.set_num_interop_threads(workers)
+            except RuntimeError:
+                LOGGER.debug(
+                    "Unable to set torch inter-op thread count to %s; continuing with existing setting.",
+                    workers,
+                )
         try:
             from ultralytics import YOLO
         except ImportError as exc:  # pragma: no cover - depends on optional dependency setup
@@ -1741,7 +1750,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_parse_positive_int,
         default=None,
         metavar="N",
-        help="Number of DataLoader worker processes for training (default: Ultralytics default). Set to the number of CPU cores available, e.g. --workers 16 for a 16-core system.",
+        help="Number of training workers. Used for Ultralytics DataLoader workers and torch CPU thread pools when training executes. Set to available CPU cores, e.g. --workers 16.",
     )
 
     digitize_parser = subparsers.add_parser("digitize", help="Digitize one or more plot images.")

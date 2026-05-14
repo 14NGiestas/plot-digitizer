@@ -253,5 +253,6 @@ uv run --from git+https://github.com/14NGiestas/plot-digitizer.git digitizer gen
 - Pass `--x-range min:max` and `--y-range min:max` when auto-detection is unavailable.
 - `digitize --weights model.pt` supports `.pt` or `.onnx` Ultralytics-compatible weights.
 - `train --hyp-yaml path/to/file.yaml` passes Ultralytics override configuration (`cfg`) for training hyperparameters.
+- `train --workers N --execute` applies `N` to both Ultralytics DataLoader workers and torch CPU thread pools.
 - The `ai` optional dependency installs `ultralytics` only; install torch/torchvision for your accelerator (CUDA, ROCm, or CPU).
 - Use `ai-cpu` for a one-step CPU installation.
