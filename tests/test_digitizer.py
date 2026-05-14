@@ -173,6 +173,34 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertGreaterEqual(max_class_id, 0)
             self.assertLess(max_class_id, nc_value)
 
+    def test_parallel_generation_matches_sequential(self) -> None:
+        """Parallel generation (workers=2) must produce identical files to sequential (workers=1)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seq_dir = root / "sequential"
+            par_dir = root / "parallel"
+
+            digitizer.generate_synthetic_dataset(
+                seq_dir, count=4, seed=99, image_format="png", plot_type="mixed", workers=1
+            )
+            digitizer.generate_synthetic_dataset(
+                par_dir, count=4, seed=99, image_format="png", plot_type="mixed", workers=2
+            )
+
+            for subdir in ("images", "labels", "ground_truth"):
+                seq_files = sorted(f.name for f in (seq_dir / subdir).iterdir())
+                par_files = sorted(f.name for f in (par_dir / subdir).iterdir())
+                self.assertEqual(seq_files, par_files, f"File list mismatch in {subdir}/")
+
+            # Content must also match: compare label files byte-for-byte.
+            for label_file in sorted((seq_dir / "labels").glob("*.txt")):
+                par_label = par_dir / "labels" / label_file.name
+                self.assertEqual(
+                    label_file.read_text(),
+                    par_label.read_text(),
+                    f"Label content differs for {label_file.name}",
+                )
+
     def test_run_training_raises_import_error_for_missing_torch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             dataset_dir = Path(tmp) / "synthetic"
