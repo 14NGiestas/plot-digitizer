@@ -208,6 +208,8 @@ class DigitizerWorkflowTests(unittest.TestCase):
                         f"File content differs for {rel_path}",
                     )
                 else:
+                    # Several generated text files embed absolute output paths; normalize root prefixes
+                    # so content comparisons focus on deterministic data rather than directory names.
                     seq_text = seq_file.read_text().replace(str(seq_dir), "__DATASET_ROOT__")
                     par_text = par_file.read_text().replace(str(par_dir), "__DATASET_ROOT__")
                     self.assertEqual(seq_text, par_text, f"File content differs for {rel_path}")

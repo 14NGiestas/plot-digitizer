@@ -1493,7 +1493,7 @@ def generate_synthetic_dataset(
 
     cpu_count = os.cpu_count() or 1
     n_workers = workers if workers is not None else min(cpu_count, count, DEFAULT_GENERATE_WORKERS_CAP)
-    if n_workers is None or n_workers <= 1:
+    if n_workers <= 1:
         for task in tasks:
             _generate_one_sample(task)
     else:
