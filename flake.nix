@@ -160,6 +160,15 @@
           ] ++ commonSystemLibs ++ extraPkgs;
           shellHook = shellPythonPathHook + shellHook;
         };
+        cpuShell = mkPyShell {
+          extraPythonPkgs = aiPythonPkgs python.pkgs;
+          shellHook = mkAiVenvHook {
+            venvName = "venv-ai-cpu";
+            torchIndexUrl = "https://download.pytorch.org/whl/cpu";
+          } + ''
+            echo "CPU shell ready. Ultralytics + torch active."
+          '';
+        };
 
         # GPU-specific shells are only meaningful on Linux
         gpuShells = pkgs.lib.optionalAttrs pkgs.stdenv.isLinux (
@@ -305,7 +314,8 @@ PY
 
         devShells = {
           # Default shell — CPU-only, works on all platforms, used in CI
-          default = mkPyShell {};
+          default = cpuShell;
+          cpu-only = cpuShell;
         } // gpuShells;
       }
     );

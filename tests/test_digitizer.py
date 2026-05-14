@@ -442,7 +442,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertEqual(mock_axhline.call_count, annotation_counts.get("hbar", 0))
             self.assertEqual(mock_errorbar.call_count, annotation_counts.get("error_bar", 0))
 
-    def test_gpu_shells_auto_install_torch_via_venv(self) -> None:
+    def test_ai_shells_auto_install_torch_via_venv(self) -> None:
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
         self.assertIn(
             "rocmPkgs = if pkgs ? pkgsRocm then pkgs.pkgsRocm else pkgs;",
@@ -454,17 +454,19 @@ class DigitizerWorkflowTests(unittest.TestCase):
             "aiPythonPkgs = defaultPs: ps:",
             flake_text,
         )
-        # All three GPU shells must use the AI Python packages.
+        # CPU + GPU shells must use the AI Python packages.
         self.assertEqual(
             flake_text.count("extraPythonPkgs = aiPythonPkgs python.pkgs;"),
-            3,
+            4,
         )
         # mkAiVenvHook helper must be present and wired up for each accelerator.
         self.assertIn("mkAiVenvHook", flake_text)
+        self.assertIn("venv-ai-cpu", flake_text)
         self.assertIn("venv-ai-rocm", flake_text)
         self.assertIn("venv-ai-cuda", flake_text)
         self.assertIn("venv-ai-cuda-legacy", flake_text)
         self.assertIn('-c "import torch; import torchvision; import numpy"', flake_text)
+        self.assertIn("https://download.pytorch.org/whl/cpu", flake_text)
         self.assertIn("rocm6.2", flake_text)
         self.assertIn("cu124", flake_text)
         self.assertIn("cu118", flake_text)
