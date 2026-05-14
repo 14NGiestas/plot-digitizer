@@ -1465,7 +1465,8 @@ def generate_synthetic_dataset(
             ``"bandstructure"``, or ``"mixed"``.
         workers: Number of worker processes.  ``None`` (default) uses
             ``min(os.cpu_count(), count, 8)``. Pass ``1`` for strictly
-            sequential execution (useful for debugging).
+            sequential execution (useful for debugging). The cap keeps
+            process and memory overhead reasonable on high-core systems.
     """
     if workers is not None and workers < 1:
         raise ValueError(f"workers must be >= 1, got {workers}")

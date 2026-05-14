@@ -194,11 +194,11 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 par_files = sorted(f.name for f in (par_dir / subdir).iterdir())
                 self.assertEqual(seq_files, par_files, f"File list mismatch in {subdir}/")
 
-            sequential_files = sorted(path.relative_to(seq_dir) for path in seq_dir.rglob("*") if path.is_file())
-            parallel_files = sorted(path.relative_to(par_dir) for path in par_dir.rglob("*") if path.is_file())
-            self.assertEqual(sequential_files, parallel_files)
+            seq_relative_paths = sorted(path.relative_to(seq_dir) for path in seq_dir.rglob("*") if path.is_file())
+            par_relative_paths = sorted(path.relative_to(par_dir) for path in par_dir.rglob("*") if path.is_file())
+            self.assertEqual(seq_relative_paths, par_relative_paths)
 
-            for rel_path in sequential_files:
+            for rel_path in seq_relative_paths:
                 seq_file = seq_dir / rel_path
                 par_file = par_dir / rel_path
                 if rel_path.suffix.lower() in {".png", ".jpg", ".jpeg"}:
