@@ -149,6 +149,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
         formatted = digitizer._format_reference_pair_cli_value(original)
         parsed = digitizer.parse_reference_pair(formatted, "x")
         for parsed_point, original_point in zip(parsed, original, strict=True):
+            # Formatter uses .6f for pixel values and .15g for real values.
             self.assertAlmostEqual(parsed_point[0], original_point[0], places=6)
             self.assertAlmostEqual(parsed_point[1], original_point[1], places=12)
 

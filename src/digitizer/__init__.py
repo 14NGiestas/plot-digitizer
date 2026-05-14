@@ -329,7 +329,9 @@ def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair
     dragging_index: int | None = None
     cancelled = False
     click_radius = max(10.0, float(max(image_width, image_height)) * INTERACTIVE_CLICK_RADIUS_SCALE)
-    zoom_half_size = max(INTERACTIVE_ZOOM_HALF_SIZE_MIN, int(max(image_width, image_height) * INTERACTIVE_ZOOM_HALF_SIZE_SCALE))
+    zoom_half_size = float(
+        max(INTERACTIVE_ZOOM_HALF_SIZE_MIN, int(max(image_width, image_height) * INTERACTIVE_ZOOM_HALF_SIZE_SCALE))
+    )
 
     def _distance(x0: float, y0: float, x1: float, y1: float) -> float:
         return float(np.hypot(x1 - x0, y1 - y0))
@@ -350,7 +352,7 @@ def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair
         zoom_axis.clear()
         zoom_axis.imshow(image)
         zoom_axis.axis("off")
-        if active_index is None or active_index < 0 or active_index >= len(points):
+        if active_index is None or active_index >= len(points):
             zoom_axis.set_title("Zoom (select/move a point)", fontsize=10)
             return
         x_coord, y_coord = points[active_index]
@@ -480,7 +482,11 @@ def interactive_reference_selection(image_path: Path) -> tuple[AxisReferencePair
 
 
 def _format_reference_pair_cli_value(reference_pair: AxisReferencePair) -> str:
-    """Format reference pairs for `--x-reference/--y-reference` CLI reuse."""
+    """Format reference pairs for `--x-reference/--y-reference` CLI reuse.
+
+    Pixel coordinates use fixed 6 decimals for stable, readable replay strings.
+    Real values use 15 significant digits to preserve round-trip precision.
+    """
     first, second = reference_pair
     return (
         f"{first[0]:.6f}:{first[1]:.15g},"
