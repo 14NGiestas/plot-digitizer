@@ -1725,7 +1725,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_parse_positive_int,
         default=None,
         metavar="N",
-        help="Number of DataLoader worker processes for training (default: Ultralytics default). Use all cores, e.g. --workers 16.",
+        help="Number of DataLoader worker processes for training (default: Ultralytics default). Set to the number of CPU cores available, e.g. --workers 16 for a 16-core system.",
     )
 
     digitize_parser = subparsers.add_parser("digitize", help="Digitize one or more plot images.")
