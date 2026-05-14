@@ -1533,6 +1533,7 @@ def run_training(
     batch: int,
     execute: bool,
     hyp_yaml: Path | None = None,
+    workers: int | None = None,
 ) -> dict[str, Any]:
     """Create or execute a YOLO segmentation training job."""
     dataset_yaml = (dataset_dir / "dataset.yaml").resolve()
@@ -1552,6 +1553,8 @@ def run_training(
         if not hyp_path.exists():
             raise FileNotFoundError(f"Hyperparameter config not found: {hyp_path}")
         training_plan["cfg"] = str(hyp_path)
+    if workers is not None:
+        training_plan["workers"] = workers
     if execute:
         try:
             import torch as _torch  # noqa: F401
@@ -1594,6 +1597,8 @@ def run_training(
             "project": str(output_dir),
             "name": "synthetic_plot_digitizer",
         }
+        if workers is not None:
+            train_kwargs["workers"] = workers
         if hyp_path is not None:
             train_kwargs["cfg"] = str(hyp_path)
         training_plan["result"] = model.train(**train_kwargs).save_dir.as_posix()
@@ -1715,6 +1720,13 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--batch", type=int, default=8)
     train_parser.add_argument("--hyp-yaml", type=Path, default=None, help="Optional Ultralytics training override YAML (cfg).")
     train_parser.add_argument("--execute", action="store_true", help="Run training immediately. Otherwise, only print the plan.")
+    train_parser.add_argument(
+        "--workers",
+        type=_parse_positive_int,
+        default=None,
+        metavar="N",
+        help="Number of DataLoader worker processes for training (default: Ultralytics default). Use all cores, e.g. --workers 16.",
+    )
 
     digitize_parser = subparsers.add_parser("digitize", help="Digitize one or more plot images.")
     digitize_parser.add_argument("inputs", nargs="+", help="Input image files or directories.")
@@ -1778,6 +1790,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.batch,
             args.execute,
             args.hyp_yaml,
+            workers=args.workers,
         )
         print(json.dumps(plan, indent=2, default=_json_default))
         return 0
