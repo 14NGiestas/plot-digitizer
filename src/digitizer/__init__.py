@@ -1771,7 +1771,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_parse_positive_int,
         default=None,
         metavar="N",
-        help="Number of DataLoader worker processes for AI digitization inference (default: Ultralytics default). Set to CPU core count, e.g. --workers 16 for a 16-core system.",
+        help="Number of DataLoader worker processes for AI digitizing inference (default: Ultralytics default). Set to CPU core count, e.g. --workers 16 for a 16-core system.",
     )
     digitize_parser.add_argument("--overlay", action="store_true", help="Write overlay images.")
 
