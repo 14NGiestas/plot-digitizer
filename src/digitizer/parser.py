@@ -87,6 +87,20 @@ def build_parser() -> argparse.ArgumentParser:
     validate_parser.add_argument("--truth-csv", type=Path, required=True)
     validate_parser.add_argument("--output-json", type=Path, default=None)
 
+    annotate_parser = subparsers.add_parser(
+        "annotate",
+        help="Interactively annotate a plot image and save a YOLO training sample.",
+    )
+    annotate_parser.add_argument("input", type=Path, help="Input plot image to annotate.")
+    annotate_parser.add_argument(
+        "--output-dir", type=Path, default=Path("annotated-output"),
+        help="Directory where the training sample (image, label, metadata) is written.",
+    )
+    annotate_parser.add_argument(
+        "--line-width", type=float, default=3.0,
+        help="Stroke width (pixels) used to build polygon envelopes for vbar/hbar/etc.",
+    )
+
     return parser
 
 

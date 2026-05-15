@@ -18,6 +18,17 @@ import numpy as np
 import pandas as pd
 
 import digitizer
+from digitizer.annotation_io import (
+    annotation_to_yolo_line,
+    polygon_from_arrow,
+    polygon_from_curve,
+    polygon_from_error_bar,
+    polygon_from_hbar,
+    polygon_from_vbar,
+    save_training_sample,
+    scale_annotation_points,
+)
+from digitizer.parser import build_parser
 
 
 class DigitizerWorkflowTests(unittest.TestCase):
@@ -632,6 +643,133 @@ class DigitizerWorkflowTests(unittest.TestCase):
         flake_text = (Path(__file__).resolve().parents[1] / "flake.nix").read_text()
         self.assertIn('writeShellScriptBin "digitizer"', flake_text)
         self.assertIn('exec python -m digitizer "$@"', flake_text)
+
+
+class AnnotationIOTests(unittest.TestCase):
+    """Tests for annotation_io polygon geometry and training sample export."""
+
+    def test_polygon_from_vbar_normalises_x_center(self) -> None:
+        # vbar at x=100 in a 200×200 image, line_width=4 → half-width = 2px
+        poly = polygon_from_vbar(100, 0, 200, 4, 200, 200)
+        # poly = [x0, y0, x1, y1, x2, y2, x3, y3] (4 corners)
+        self.assertEqual(len(poly), 8)
+        xs = poly[0::2]
+        self.assertAlmostEqual(min(xs), (100 - 2) / 200, places=5)
+        self.assertAlmostEqual(max(xs), (100 + 2) / 200, places=5)
+
+    def test_polygon_from_hbar_normalises_y_center(self) -> None:
+        poly = polygon_from_hbar(60, 0, 120, 6, 120, 120)
+        ys = poly[1::2]
+        self.assertAlmostEqual(min(ys), (60 - 3) / 120, places=5)
+        self.assertAlmostEqual(max(ys), (60 + 3) / 120, places=5)
+
+    def test_polygon_from_arrow_returns_four_corners(self) -> None:
+        poly = polygon_from_arrow((0, 0), (100, 0), 4, 200, 200)
+        self.assertEqual(len(poly), 8)
+
+    def test_polygon_from_arrow_degenerate_returns_empty(self) -> None:
+        poly = polygon_from_arrow((50, 50), (50, 50), 4, 200, 200)
+        self.assertEqual(poly, [])
+
+    def test_polygon_from_curve_two_points(self) -> None:
+        poly = polygon_from_curve([(10, 10), (90, 10)], 4, 100, 100)
+        # upper + lower sides → 4 corners = 8 values
+        self.assertGreaterEqual(len(poly), 8)
+
+    def test_polygon_from_curve_single_point_empty(self) -> None:
+        self.assertEqual(polygon_from_curve([(50, 50)], 3, 100, 100), [])
+
+    def test_polygon_from_error_bar_shape(self) -> None:
+        poly = polygon_from_error_bar(50, 10, 90, 20, 4, 100, 100)
+        # 8 vertices × 2 coords = 16 values
+        self.assertEqual(len(poly), 16)
+
+    def test_annotation_to_yolo_line_vbar_format(self) -> None:
+        ann = {"type": "vbar", "points": [(100, 50)]}
+        line = annotation_to_yolo_line(ann, 200, 200)
+        self.assertIsNotNone(line)
+        assert line is not None
+        self.assertTrue(line.startswith("1 "))
+        parts = line.split()
+        self.assertEqual(parts[0], "1")
+        # Remaining values should all parse as floats in [0, 1]
+        for v in parts[1:]:
+            self.assertGreaterEqual(float(v), 0.0)
+            self.assertLessEqual(float(v), 1.0)
+
+    def test_annotation_to_yolo_line_arrow_format(self) -> None:
+        ann = {"type": "arrow", "points": [(10, 10), (90, 90)]}
+        line = annotation_to_yolo_line(ann, 100, 100)
+        self.assertIsNotNone(line)
+        assert line is not None
+        self.assertTrue(line.startswith("3 "))
+
+    def test_annotation_to_yolo_line_unknown_type_returns_none(self) -> None:
+        self.assertIsNone(annotation_to_yolo_line({"type": "unknown", "points": [(1, 1)]}, 100, 100))
+
+    def test_annotation_to_yolo_line_insufficient_points_returns_none(self) -> None:
+        # arrow needs 2 points
+        self.assertIsNone(annotation_to_yolo_line({"type": "arrow", "points": [(1, 1)]}, 100, 100))
+
+    def test_scale_annotation_points_scales_proportionally(self) -> None:
+        ann = {"type": "vbar", "points": [(100, 200)], "line_width": 3.0}
+        scaled = scale_annotation_points(ann, 0.5, 0.5)
+        self.assertAlmostEqual(scaled["points"][0][0], 50.0)
+        self.assertAlmostEqual(scaled["points"][0][1], 100.0)
+        # Original should be unmodified
+        self.assertAlmostEqual(ann["points"][0][0], 100.0)
+
+    def test_save_training_sample_creates_expected_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # Create a minimal synthetic image
+            import cv2
+            img = np.zeros((100, 100, 3), dtype=np.uint8)
+            img_path = root / "test_image.png"
+            cv2.imwrite(str(img_path), img)
+
+            annotations = [
+                {"type": "vbar", "points": [(50, 0)]},
+                {"type": "hbar", "points": [(0, 50)]},
+                {"type": "arrow", "points": [(10, 10), (80, 80)]},
+            ]
+            result = save_training_sample(img_path, annotations, root / "out")
+
+            self.assertTrue(Path(result["image_path"]).exists())
+            self.assertTrue(Path(result["label_path"]).exists())
+            self.assertTrue(Path(result["metadata_path"]).exists())
+
+            label_text = Path(result["label_path"]).read_text()
+            lines = [l for l in label_text.splitlines() if l.strip()]
+            self.assertEqual(len(lines), 3)
+            # First line should be class 1 (vbar)
+            self.assertTrue(lines[0].startswith("1 "))
+            # Second line should be class 2 (hbar)
+            self.assertTrue(lines[1].startswith("2 "))
+            # Third line should be class 3 (arrow)
+            self.assertTrue(lines[2].startswith("3 "))
+
+            metadata = json.loads(Path(result["metadata_path"]).read_text())
+            self.assertEqual(metadata["image_width"], 100)
+            self.assertEqual(metadata["image_height"], 100)
+            self.assertEqual(metadata["label_count"], 3)
+
+
+class AnnotateParserTests(unittest.TestCase):
+    """Tests for the `annotate` CLI sub-command parser."""
+
+    def test_annotate_parser_accepts_image_input(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["annotate", "my_plot.png"])
+        self.assertEqual(args.command, "annotate")
+        self.assertEqual(str(args.input), "my_plot.png")
+        self.assertAlmostEqual(args.line_width, 3.0)
+
+    def test_annotate_parser_accepts_custom_output_dir(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["annotate", "img.png", "--output-dir", "/tmp/out", "--line-width", "5.0"])
+        self.assertEqual(str(args.output_dir), "/tmp/out")
+        self.assertAlmostEqual(args.line_width, 5.0)
 
 
 if __name__ == "__main__":

@@ -48,6 +48,18 @@ from .synthetic import (
     generate_synthetic_dataset,
     run_training,
 )
+from .annotation_io import (
+    CLASS_MAPPING as ANNOTATION_CLASS_MAPPING,
+    annotation_to_yolo_line,
+    polygon_from_arrow,
+    polygon_from_curve,
+    polygon_from_error_bar,
+    polygon_from_hbar,
+    polygon_from_vbar,
+    save_training_sample,
+    scale_annotation_points,
+)
+from .interactive_annotator import interactive_annotation_session
 from .validation import validate_digitization
 
 
@@ -170,6 +182,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         summary = validate_digitization(args.prediction_csv, args.truth_csv, args.output_json)
         print(json.dumps(summary, indent=2))
         return 0 if summary["passed_under_5_percent"] else 1
+
+    if args.command == "annotate":
+        _set_matplotlib_backend("TkAgg")
+        result = interactive_annotation_session(
+            image_path=args.input,
+            output_dir=args.output_dir,
+            line_width=args.line_width,
+        )
+        if result:
+            print(json.dumps(result, indent=2))
+        else:
+            LOGGER.info("No annotations saved.")
+        return 0
 
     parser.error(f"Unsupported command: {args.command}")
     return 2
