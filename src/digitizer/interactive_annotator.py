@@ -42,6 +42,8 @@ _MODE_COLORS: dict[str, str] = {
     "x_anchor": "goldenrod",
     "y_anchor": "mediumseagreen",
 }
+_MIN_ZOOM_HALF_SIZE = 30.0
+_ZOOM_HALF_SIZE_SCALE = 0.075
 _KEY_TO_MODE: dict[str, str] = {
     "1": "vbar", "v": "vbar",
     "2": "hbar", "h": "hbar",
@@ -93,7 +95,7 @@ class _AnnotatorSession:
         self._committed: list[dict[str, Any]] = list(initial_annotations or [])
         self._do_save = False
         self._active_point: tuple[float, float] | None = None
-        self._zoom_half_size = max(30.0, max(self._w, self._h) * 0.075)
+        self._zoom_half_size = max(_MIN_ZOOM_HALF_SIZE, max(self._w, self._h) * _ZOOM_HALF_SIZE_SCALE)
         self._fig, (self._ax, self._zoom_ax) = plt.subplots(
             ncols=2,
             figsize=(13, 7),
@@ -264,13 +266,15 @@ class _AnnotatorSession:
     def run(self) -> list[dict[str, Any]]:
         """Show the annotation window; return committed annotations (empty on cancel)."""
         self._redraw()
-        manager = self._fig.canvas.manager
-        if manager is not None and hasattr(manager, "key_press_handler_id"):
-            self._fig.canvas.mpl_disconnect(manager.key_press_handler_id)
         self._fig.canvas.mpl_connect("button_press_event", self._on_click)
         self._fig.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self._fig.canvas.mpl_connect("key_press_event", self._on_key)
-        plt.show()
+        import matplotlib as mpl
+        keymap_overrides = {
+            key: [] for key in mpl.rcParams if key.startswith("keymap.")
+        }
+        with mpl.rc_context(rc=keymap_overrides):
+            plt.show()
         return list(self._committed) if self._do_save else []
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -331,7 +332,7 @@ def load_training_sample_annotations(
         return []
 
     metadata = json.loads(metadata_path.read_text())
-    annotations = [dict(ann) for ann in metadata.get("annotations", []) if isinstance(ann, dict)]
+    annotations = [deepcopy(ann) for ann in metadata.get("annotations", []) if isinstance(ann, dict)]
     if not annotations or target_size is None:
         return annotations
 
