@@ -52,7 +52,7 @@ def run_training(
                 _m = _re.search(r"cuda[_-]?(\d+)[._-]\d+", cuda_path, _re.IGNORECASE)
                 cuda_major = int(_m.group(1)) if _m else 0
                 if cuda_major == 11:
-                    index_url = "https://download.pytorch.org/whl/cu118"
+                    index_url = "https://download.pytorch.org/whl/cu114"
                 elif cuda_major >= 12:
                     index_url = "https://download.pytorch.org/whl/cu124"
                 else:
