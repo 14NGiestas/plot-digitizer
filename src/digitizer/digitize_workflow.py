@@ -1,0 +1,124 @@
+"""Top-level digitization workflow."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from pathlib import Path
+
+import pandas as pd
+
+from .ai_segmentation import run_ai_segmentation
+from .calibration import calibrate_axes
+from .constants import LOGGER
+from .cv_segmentation import run_cv_segmentation
+from .image_ops import load_image, preprocess_image, resolve_plot_box
+from .models import AxisReferencePair, DigitizeResult
+from .plotting import build_replot_frame, create_overlay, create_replot
+from .points import convert_points, extract_curve_points
+
+def digitize_image(
+    image_path: Path,
+    output_dir: Path,
+    x_range: tuple[float, float] | None,
+    y_range: tuple[float, float] | None,
+    x_reference: AxisReferencePair | None,
+    y_reference: AxisReferencePair | None,
+    x_scale: str,
+    y_scale: str,
+    invert_y: bool,
+    weights: str | None,
+    conf_threshold: float,
+    create_overlay_image: bool,
+    workers: int | None = None,
+    auto_axis_anchors: bool = True,
+) -> DigitizeResult:
+    """Digitize a single image and write CSV/JSON artifacts."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    image = load_image(image_path)
+    processed_gray, preprocess_stats = preprocess_image(image)
+    plot_box = resolve_plot_box(image_path, image, processed_gray)
+    calibration, axis_metadata = calibrate_axes(
+        image_path=image_path,
+        plot_box=plot_box,
+        processed_gray=processed_gray,
+        x_range=x_range,
+        y_range=y_range,
+        x_reference=x_reference,
+        y_reference=y_reference,
+        x_scale=x_scale,
+        y_scale=y_scale,
+        invert_y=invert_y,
+        auto_axis_anchors=auto_axis_anchors,
+    )
+
+    segmentations = run_ai_segmentation(
+        image,
+        plot_box,
+        weights,
+        conf_threshold,
+        workers=workers,
+    )
+    if not segmentations:
+        LOGGER.info("AI segmentation unavailable or empty for %s; using CV fallback.", image_path.name)
+        segmentations = run_cv_segmentation(image, plot_box)
+    if not segmentations:
+        raise RuntimeError(f"Unable to isolate curves in {image_path}. Try passing --x-range/--y-range or a segmentation model.")
+
+    point_frames = [extract_curve_points(segmentation, plot_box) for segmentation in segmentations]
+    combined = pd.concat(point_frames, ignore_index=True) if point_frames else pd.DataFrame()
+    combined = combined.dropna().sort_values(["dataset_id", "x_px"]).reset_index(drop=True)
+    converted = convert_points(combined, calibration, plot_box)
+    if converted.empty:
+        raise RuntimeError(f"No digitized points were extracted from {image_path}.")
+
+    csv_path = output_dir / f"{image_path.stem}.digitized.csv"
+    replot_csv_path = output_dir / f"{image_path.stem}.replot.csv"
+    metadata_path = output_dir / f"{image_path.stem}.metadata.json"
+    replot_path = output_dir / f"{image_path.stem}.replot.png"
+    overlay_path = output_dir / f"{image_path.stem}.overlay.png" if create_overlay_image else None
+
+    converted[["dataset_id", "x_real", "y_real", "confidence"]].to_csv(csv_path, index=False)
+    replot_frame = build_replot_frame(converted, x_scale=calibration.x_scale)
+    replot_frame.to_csv(replot_csv_path, index=False)
+    create_replot(replot_frame, calibration, image_path.name, replot_path)
+    metadata = {
+        "input_image": str(image_path),
+        "plot_box": asdict(plot_box),
+        "axis": asdict(calibration),
+        "exports": {
+            "digitized_csv": str(csv_path),
+            "replot_csv": str(replot_csv_path),
+            "replot_image": str(replot_path),
+            "overlay_image": str(overlay_path) if overlay_path else None,
+        },
+        "preprocessing": preprocess_stats,
+        "segmentation": {
+            "dataset_count": int(converted["dataset_id"].nunique()),
+            "points": int(len(converted)),
+            "method_counts": {
+                str(method): int(count)
+                for method, count in pd.Series([segmentation.method for segmentation in segmentations]).value_counts().items()
+            },
+            "confidence_stats": {
+                "min": float(converted["confidence"].min()),
+                "max": float(converted["confidence"].max()),
+                "mean": float(converted["confidence"].mean()),
+            },
+        },
+        **axis_metadata,
+    }
+    metadata_path.write_text(json.dumps(metadata, indent=2))
+    if overlay_path is not None:
+        create_overlay(image, converted, segmentations, overlay_path)
+
+    return DigitizeResult(
+        csv_path=csv_path,
+        replot_csv_path=replot_csv_path,
+        metadata_path=metadata_path,
+        replot_path=replot_path,
+        overlay_path=overlay_path,
+        point_count=int(len(converted)),
+        dataset_count=int(converted["dataset_id"].nunique()),
+    )
+
