@@ -1152,6 +1152,16 @@ class ImportAnnotationsTests(unittest.TestCase):
             self.assertEqual(args.command, "import-annotations")
             self.assertEqual(args.source, metadata_path)
 
+    def test_import_annotations_main_missing_source_reports_cli_error(self) -> None:
+        err = io.StringIO()
+        with redirect_stderr(err):
+            with self.assertRaises(SystemExit) as ctx:
+                digitizer.main(["import-annotations", "manual"])
+        self.assertEqual(ctx.exception.code, 2)
+        stderr = err.getvalue()
+        self.assertIn("No metadata sidecar found for manual", stderr)
+        self.assertIn("Provide a .metadata.json path", stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

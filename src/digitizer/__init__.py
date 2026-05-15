@@ -214,7 +214,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "import-annotations":
-        out_path = import_annotations_from_old_format(args.source, args.output_dir)
+        try:
+            out_path = import_annotations_from_old_format(args.source, args.output_dir)
+        except (FileNotFoundError, ValueError) as exc:
+            parser.error(
+                f"{exc}. Provide a .metadata.json path or an image path with a matching "
+                "*.metadata.json sidecar."
+            )
         print(json.dumps({"annotations_path": str(out_path)}, indent=2))
         return 0
 
