@@ -31,6 +31,9 @@ CLASS_MAPPING: dict[str, int] = {
     "y_anchor": 9,
     "x_tick_label": 10,
     "y_tick_label": 11,
+    "legend": 12,
+    "x_axis_label": 13,
+    "y_axis_label": 14,
 }
 
 
@@ -243,6 +246,8 @@ def annotation_to_yolo_line(
     elif ann_type in ("x_tick_label", "y_tick_label") and len(pts) >= 2:
         # Tick labels are stored as [(x0,y0),(x1,y1)] bounding-box corners in
         # image coordinates (top-left origin, y increases downward).
+        polygon = polygon_from_rectangle(pts[0], pts[1], image_width, image_height)
+    elif ann_type in ("legend", "x_axis_label", "y_axis_label") and len(pts) >= 2:
         polygon = polygon_from_rectangle(pts[0], pts[1], image_width, image_height)
     else:
         return None

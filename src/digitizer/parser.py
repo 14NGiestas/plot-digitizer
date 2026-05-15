@@ -46,6 +46,26 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Number of worker processes for parallel generation (default: min(os.cpu_count(), count, 8)). Use 1 for sequential.",
     )
+    generate_parser.add_argument(
+        "--difficulty",
+        type=int,
+        choices=[0, 1, 2, 3, 4],
+        default=0,
+        metavar="LEVEL",
+        help=(
+            "Difficulty level for all generated samples (0=no restrictions/full complexity, "
+            "1=easy, 2=medium-easy, 3=medium-hard, 4=hard). "
+            "Use --curriculum to generate a balanced mix of all levels."
+        ),
+    )
+    generate_parser.add_argument(
+        "--curriculum",
+        action="store_true",
+        help=(
+            "Distribute samples evenly across difficulty levels 1–4 in round-robin order "
+            "(1,2,3,4,1,2,3,4,…), ideal for curriculum learning. Overrides --difficulty."
+        ),
+    )
 
     train_parser = subparsers.add_parser("train", help="Train or plan a YOLO segmentation model.")
     train_parser.add_argument("--dataset-dir", type=Path, required=True)

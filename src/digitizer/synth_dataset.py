@@ -29,16 +29,13 @@ class SampleGenerationTask:
     image_format: str
     plot_type: str
     degradations: int = 1
+    difficulty: int = 0
 
 
 def _generate_one_sample(args: SampleGenerationTask) -> None:
-    """Worker function for parallel synthetic sample generation.
-
-    Accepts a :class:`SampleGenerationTask` dataclass instance so it can be
-    passed through :func:`ProcessPoolExecutor.map` with explicit named fields.
-    """
+    """Worker function for parallel synthetic sample generation."""
     rng = np.random.default_rng(args.child_seed)
-    _write_synthetic_example(args.index, args.output_dir, rng, args.image_format, args.plot_type, args.degradations)
+    _write_synthetic_example(args.index, args.output_dir, rng, args.image_format, args.plot_type, args.degradations, difficulty=args.difficulty)
 
 
 def generate_synthetic_dataset(
@@ -49,6 +46,8 @@ def generate_synthetic_dataset(
     plot_type: str = "mixed",
     workers: int | None = None,
     degradations: int = 1,
+    difficulty: int = 0,
+    curriculum: bool = False,
 ) -> None:
     """Generate a synthetic plot dataset with YOLO segmentation labels.
 
@@ -71,8 +70,13 @@ def generate_synthetic_dataset(
             process and memory overhead reasonable on high-core systems.
         degradations: Number of independently degraded image variants to
             produce per base plot.  All variants share the same YOLO labels,
-            annotations, and ground-truth CSV.  Defaults to ``1`` (current
-            behaviour: one degraded image per base plot).
+            annotations, and ground-truth CSV.  Defaults to ``1``.
+        difficulty: Curriculum difficulty level.  ``0`` (default) disables
+            per-level restrictions (full-complexity plots, backward-compatible).
+            Pass ``1``–``4`` to fix all samples at one difficulty level.
+        curriculum: When ``True``, override *difficulty* and distribute samples
+            evenly across levels 1–4 in round-robin order (1,2,3,4,1,2,3,4,…).
+            Ignored when *difficulty* != 0.
     """
     if workers is not None and workers < 1:
         raise ValueError(f"workers must be >= 1, got {workers}")
@@ -83,8 +87,6 @@ def generate_synthetic_dataset(
     for subdir in ("images", "labels", "csv", "annotations"):
         (output_dir / subdir).mkdir(exist_ok=True)
 
-    # Derive independent child seeds from the master SeedSequence.
-    # children[0] drives plot-type assignment; children[1:] drive per-sample rngs.
     ss = np.random.SeedSequence(seed)
     all_children = ss.spawn(count + 1)
     type_rng = np.random.default_rng(all_children[0])
@@ -95,6 +97,13 @@ def generate_synthetic_dataset(
         for _ in range(count)
     ]
 
+    # difficulty=0 → no restrictions (backward compat).
+    # curriculum=True → override with round-robin 1→2→3→4 across samples.
+    if curriculum:
+        difficulties: list[int] = [((i % 4) + 1) for i in range(count)]
+    else:
+        difficulties = [difficulty] * count
+
     tasks: list[SampleGenerationTask] = [
         SampleGenerationTask(
             index=i,
@@ -103,6 +112,7 @@ def generate_synthetic_dataset(
             image_format=image_format,
             plot_type=plot_types[i],
             degradations=degradations,
+            difficulty=difficulties[i],
         )
         for i in range(count)
     ]

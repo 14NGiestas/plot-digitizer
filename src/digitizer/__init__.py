@@ -86,6 +86,7 @@ def _write_synthetic_example(
         rng,
         image_format,
         plot_type,
+        difficulty=0,
         apply_degradation_filters_fn=_apply_degradation_filters,
         render_curve_mask_fn=_render_curve_mask,
         render_vbar_mask_fn=_render_vbar_mask,
@@ -105,6 +106,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         generate_synthetic_dataset(
             args.output_dir, args.count, args.seed, args.image_format, args.plot_type,
             workers=args.workers, degradations=args.degradations,
+            difficulty=args.difficulty, curriculum=args.curriculum,
         )
         total_images = args.count * args.degradations
         LOGGER.info(
