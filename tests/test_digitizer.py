@@ -720,11 +720,19 @@ class AnnotationIOTests(unittest.TestCase):
         self.assertTrue(line.startswith("3 "))
 
     def test_annotation_to_yolo_line_frame_classes(self) -> None:
-        self.assertTrue(annotation_to_yolo_line({"type": "plot_area", "points": [(5, 5), (95, 95)]}, 100, 100).startswith("5 "))  # type: ignore[union-attr]
-        self.assertTrue(annotation_to_yolo_line({"type": "x_axis", "points": [(5, 95), (95, 95)]}, 100, 100).startswith("6 "))  # type: ignore[union-attr]
-        self.assertTrue(annotation_to_yolo_line({"type": "y_axis", "points": [(5, 5), (5, 95)]}, 100, 100).startswith("7 "))  # type: ignore[union-attr]
-        self.assertTrue(annotation_to_yolo_line({"type": "x_anchor", "points": [(50, 95)]}, 100, 100).startswith("8 "))  # type: ignore[union-attr]
-        self.assertTrue(annotation_to_yolo_line({"type": "y_anchor", "points": [(5, 50)]}, 100, 100).startswith("9 "))  # type: ignore[union-attr]
+        cases = [
+            ({"type": "plot_area", "points": [(5, 5), (95, 95)]}, "5 "),
+            ({"type": "x_axis", "points": [(5, 95), (95, 95)]}, "6 "),
+            ({"type": "y_axis", "points": [(5, 5), (5, 95)]}, "7 "),
+            ({"type": "x_anchor", "points": [(50, 95)]}, "8 "),
+            ({"type": "y_anchor", "points": [(5, 50)]}, "9 "),
+        ]
+        for ann, prefix in cases:
+            with self.subTest(ann_type=ann["type"]):
+                line = annotation_to_yolo_line(ann, 100, 100)
+                self.assertIsNotNone(line)
+                assert line is not None
+                self.assertTrue(line.startswith(prefix))
 
     def test_annotation_to_yolo_line_unknown_type_returns_none(self) -> None:
         self.assertIsNone(annotation_to_yolo_line({"type": "unknown", "points": [(1, 1)]}, 100, 100))
