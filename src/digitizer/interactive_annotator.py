@@ -220,7 +220,7 @@ class _AnnotatorSession:
     # ------------------------------------------------------------------ events
 
     def _on_click(self, event: Any) -> None:
-        if event.inaxes is not self._ax or event.xdata is None:
+        if event.inaxes is not self._ax or event.xdata is None or event.ydata is None:
             return
         x, y = self._clamp(float(event.xdata), float(event.ydata))
         if event.button == 1:
