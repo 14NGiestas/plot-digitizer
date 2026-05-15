@@ -329,19 +329,30 @@ class DigitizerWorkflowTests(unittest.TestCase):
 
     def test_run_ai_segmentation_resizes_mask_to_image_shape(self) -> None:
         """Masks at model resolution must be resized to original image shape."""
-        import torch
-
         image_h, image_w = 400, 600
         mask_h, mask_w = 160, 160  # model resolution smaller than image
 
+        class _FakeTensor:
+            def __init__(self, arr: np.ndarray) -> None:
+                self._arr = arr
+
+            def cpu(self) -> "_FakeTensor":
+                return self
+
+            def numpy(self) -> np.ndarray:
+                return self._arr
+
+            def item(self) -> float:
+                return float(self._arr.flat[0])
+
         class FakeMasks:
             def __init__(self) -> None:
-                self.data = torch.ones(1, mask_h, mask_w)  # full-confidence mask
+                self.data = [_FakeTensor(np.ones((mask_h, mask_w), dtype=np.float32))]
 
         class FakeBoxes:
             def __init__(self) -> None:
-                self.conf = torch.tensor([0.9])
-                self.cls = torch.tensor([0.0])
+                self.conf = [_FakeTensor(np.array(0.9))]
+                self.cls = [_FakeTensor(np.array(0.0))]
 
         class FakeResult:
             def __init__(self) -> None:
@@ -349,7 +360,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 self.boxes = FakeBoxes()
 
         class FakeYOLO:
-            def __init__(self, _weights: str) -> None:
+            def __init__(self, weights: str) -> None:
                 pass
 
             def predict(self, _image: np.ndarray, **kwargs: object) -> list[object]:
