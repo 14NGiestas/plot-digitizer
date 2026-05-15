@@ -125,6 +125,7 @@
             python -m venv --system-site-packages "$_ai_venv"
             "$_ai_venv/bin/pip" install --quiet torch torchvision \
               --index-url ${torchIndexUrl}
+            "$_ai_venv/bin/pip" install --quiet numpy
             echo "torch/torchvision installed into ''${_ai_venv}."
           fi
           . "$_ai_venv/bin/activate"
