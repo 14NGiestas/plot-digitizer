@@ -507,7 +507,7 @@ def import_annotations_from_old_format(
                 f"No metadata sidecar found for {source}. "
                 f"Expected {metadata_path}. "
                 "Provide a .metadata.json path or an image path with a matching "
-                "*.metadata.json sidecar."
+                "<stem>.metadata.json sidecar."
             )
 
     try:

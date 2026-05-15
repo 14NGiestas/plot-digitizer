@@ -1152,7 +1152,7 @@ class ImportAnnotationsTests(unittest.TestCase):
             self.assertEqual(args.command, "import-annotations")
             self.assertEqual(args.source, metadata_path)
 
-    def test_import_annotations_main_missing_source_reports_cli_error(self) -> None:
+    def test_import_annotations_main_missing_metadata_sidecar_reports_cli_error(self) -> None:
         missing_source = "nonexistent_input_image.png"
         err = io.StringIO()
         with redirect_stderr(err):
@@ -1162,6 +1162,16 @@ class ImportAnnotationsTests(unittest.TestCase):
         stderr = err.getvalue()
         self.assertIn(f"No metadata sidecar found for {missing_source}", stderr)
         self.assertIn("Provide a .metadata.json path", stderr)
+
+    def test_import_annotations_main_missing_metadata_json_reports_cli_error(self) -> None:
+        missing_metadata = "nonexistent_plot.metadata.json"
+        err = io.StringIO()
+        with redirect_stderr(err):
+            with self.assertRaises(SystemExit) as ctx:
+                digitizer.main(["import-annotations", missing_metadata])
+        self.assertEqual(ctx.exception.code, 2)
+        stderr = err.getvalue()
+        self.assertIn(f"Could not parse metadata file {missing_metadata}", stderr)
 
 
 if __name__ == "__main__":
