@@ -25,6 +25,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib as mpl
 
 from .annotation_io import load_training_sample_annotations, save_training_sample
 from .constants import LOGGER
@@ -269,7 +270,6 @@ class _AnnotatorSession:
         self._fig.canvas.mpl_connect("button_press_event", self._on_click)
         self._fig.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self._fig.canvas.mpl_connect("key_press_event", self._on_key)
-        import matplotlib as mpl
         # Disable default matplotlib navigation shortcuts so they do not overlap
         # with annotation keys such as c/p/x/y and number mappings.
         keymap_overrides = {
