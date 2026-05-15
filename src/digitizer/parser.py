@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     generate_parser = subparsers.add_parser("generate", help="Generate synthetic plots and YOLO segmentation labels.")
-    generate_parser.add_argument("--output-dir", type=Path, required=True)
+    generate_parser.add_argument("--output-dir", type=Path, default=Path("train-dataset"))
     generate_parser.add_argument("--count", type=int, default=16)
     generate_parser.add_argument("--seed", type=int, default=42)
     generate_parser.add_argument("--image-format", default="png", choices=["png", "jpg"])
@@ -93,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     annotate_parser.add_argument("input", type=Path, help="Input plot image to annotate.")
     annotate_parser.add_argument(
-        "--output-dir", type=Path, default=Path("annotated-output"),
+        "--output-dir", type=Path, default=Path("train-dataset"),
         help="Directory where the training sample (image, label, metadata) is written.",
     )
     annotate_parser.add_argument(
@@ -115,7 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
     annotate_parser.add_argument(
         "--update",
         action="store_true",
-        help="Load existing saved annotations for this image and continue editing before saving.",
+        help="Deprecated — existing annotations are always loaded automatically. Kept for backward compatibility.",
     )
 
     return parser

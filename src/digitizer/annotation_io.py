@@ -252,17 +252,27 @@ def save_training_sample(
     output_dir: Path,
     default_line_width: float = 3.0,
     resize_to: tuple[int, int] | None = None,
+    csv_path: Path | None = None,
 ) -> dict[str, str]:
-    """Copy *image_path* plus YOLO labels and metadata sidecar into *output_dir*.
+    """Copy *image_path* plus YOLO labels, annotations, and metadata into *output_dir*.
 
     The output layout follows the same convention used by ``generate_synthetic_dataset``::
 
         output_dir/
-            images/<stem>.<ext>
-            images/<stem>.metadata.json
-            labels/<stem>.txt
+            images/<stem>.<ext>              image copy
+            images/<stem>.metadata.json      image-level properties only
+            labels/<stem>.txt                YOLO-format derived labels
+            annotations/<stem>.json          raw annotation points (source of truth)
+            csv/<stem>.csv                   associated CSV when *csv_path* is given
 
-    Returns a dict with ``image_path``, ``label_path``, and ``metadata_path`` keys.
+    Annotation points are stored in ``annotations/`` rather than embedded in
+    the metadata JSON so that the two concerns (image properties vs. annotation
+    content) remain cleanly separated.  :func:`load_training_sample_annotations`
+    reads from the annotations file first, with a metadata-embedded fallback
+    for backward compatibility.
+
+    Returns a dict with ``image_path``, ``label_path``, ``metadata_path``,
+    ``annotations_path``, and optionally ``csv_path`` keys.
     """
     import cv2
     image = cv2.imread(str(image_path))
@@ -272,8 +282,10 @@ def save_training_sample(
 
     images_dir = output_dir / "images"
     labels_dir = output_dir / "labels"
+    annotations_dir = output_dir / "annotations"
     images_dir.mkdir(parents=True, exist_ok=True)
     labels_dir.mkdir(parents=True, exist_ok=True)
+    annotations_dir.mkdir(parents=True, exist_ok=True)
 
     dest_image = images_dir / image_path.name
     if resize_to is None:
@@ -301,24 +313,49 @@ def save_training_sample(
     label_path = labels_dir / f"{image_path.stem}.txt"
     label_path.write_text("\n".join(label_lines))
 
+    # Raw annotation points go to annotations/ (separate from image metadata).
+    annotations_path = annotations_dir / f"{image_path.stem}.json"
+    annotations_path.write_text(json.dumps({
+        "image": str(dest_image),
+        "image_width": dest_width,
+        "image_height": dest_height,
+        "annotations": scaled_annotations,
+    }, indent=2))
+
+    # Copy associated CSV (ground truth / digitized data) when provided.
+    dest_csv: Path | None = None
+    if csv_path is not None and csv_path.exists():
+        csv_dir = output_dir / "csv"
+        csv_dir.mkdir(parents=True, exist_ok=True)
+        dest_csv = csv_dir / csv_path.name
+        shutil.copy2(csv_path, dest_csv)
+
+    # Metadata carries image-level properties and a reference to the annotations file.
     metadata_path = images_dir / f"{image_path.stem}.metadata.json"
-    metadata_path.write_text(json.dumps({
+    metadata: dict[str, Any] = {
         "image": str(dest_image),
         "image_width": dest_width,
         "image_height": dest_height,
         "source_image": str(image_path),
         "source_image_width": image_width,
         "source_image_height": image_height,
-        "annotations": scaled_annotations,
+        "annotations_path": str(annotations_path),
         "class_mapping": CLASS_MAPPING,
         "label_count": len(label_lines),
-    }, indent=2))
+    }
+    if dest_csv is not None:
+        metadata["csv_path"] = str(dest_csv)
+    metadata_path.write_text(json.dumps(metadata, indent=2))
 
-    return {
+    result: dict[str, str] = {
         "image_path": str(dest_image),
         "label_path": str(label_path),
         "metadata_path": str(metadata_path),
+        "annotations_path": str(annotations_path),
     }
+    if dest_csv is not None:
+        result["csv_path"] = str(dest_csv)
+    return result
 
 
 def load_training_sample_annotations(
@@ -328,31 +365,107 @@ def load_training_sample_annotations(
 ) -> list[dict[str, Any]]:
     """Load previously saved annotations for *image_path* from *output_dir*.
 
-    Returns an empty list when no metadata sidecar exists.
-    """
-    metadata_path = output_dir / "images" / f"{image_path.stem}.metadata.json"
-    if not metadata_path.exists():
-        return []
+    Search order:
+    1. ``output_dir/annotations/<stem>.json`` – primary location written by
+       :func:`save_training_sample` and ``generate_synthetic_dataset``.
+    2. Sibling ``annotations/<stem>.json`` one level above *image_path*
+       (covers images that live inside an ``images/`` subdirectory of a
+       dataset, e.g. ``synthetic-data/annotations/plot_0000.json`` when
+       annotating ``synthetic-data/images/plot_0000.png``).
+    3. ``output_dir/images/<stem>.metadata.json`` – backward-compat fallback
+       for datasets written before the annotations/ split.  Reads the
+       ``annotations`` key if present (manual annotation format with
+       ``image_width``/``image_height``), or the ``frame_annotations`` key
+       for synthetic metadata.
+    4. ``image_path.parent/<stem>.metadata.json`` – last-resort fallback for
+       metadata sidecars stored alongside the image.
 
-    metadata = json.loads(metadata_path.read_text())
-    raw_annotations = metadata.get("annotations", [])
-    annotations: list[dict[str, Any]] = []
-    for ann in raw_annotations:
-        if isinstance(ann, dict):
-            annotations.append(deepcopy(ann))
+    Annotations without a ``points`` key are silently skipped.
+
+    Returns an empty list when nothing is found.
+    """
+    stem = image_path.stem
+
+    # --- Attempt 1 & 2: dedicated annotations/ file --------------------------
+    for ann_path in (
+        output_dir / "annotations" / f"{stem}.json",
+        image_path.parent.parent / "annotations" / f"{stem}.json",
+    ):
+        if not ann_path.exists():
+            continue
+        try:
+            data = json.loads(ann_path.read_text())
+        except Exception:
+            LOGGER.warning("Could not parse annotations file %s", ann_path)
+            continue
+        raw = data.get("annotations", [])
+        annotations = _filter_annotations_with_points(raw, ann_path)
+        if not annotations:
+            continue
+        stored_w = int(data.get("image_width", 0))
+        stored_h = int(data.get("image_height", 0))
+        return _rescale_if_needed(annotations, stored_w, stored_h, target_size)
+
+    # --- Attempts 3 & 4: legacy metadata JSON fallbacks ----------------------
+    for metadata_path in (
+        output_dir / "images" / f"{stem}.metadata.json",
+        image_path.parent / f"{stem}.metadata.json",
+    ):
+        if not metadata_path.exists():
+            continue
+        try:
+            metadata = json.loads(metadata_path.read_text())
+        except Exception:
+            LOGGER.warning("Could not parse metadata file %s", metadata_path)
+            continue
+
+        # Annotation metadata (save_training_sample) has image_width; synthetic
+        # metadata does not but has frame_annotations with pixel-space points.
+        if "image_width" in metadata:
+            raw = metadata.get("annotations", [])
         else:
-            LOGGER.warning("Ignoring malformed annotation in %s: expected dict, got %s", metadata_path, type(ann).__name__)
+            raw = metadata.get("frame_annotations", [])
+
+        annotations = _filter_annotations_with_points(raw, metadata_path)
+        if not annotations:
+            continue
+        stored_w = int(metadata.get("image_width", 0))
+        stored_h = int(metadata.get("image_height", 0))
+        return _rescale_if_needed(annotations, stored_w, stored_h, target_size)
+
+    return []
+
+
+def _filter_annotations_with_points(
+    raw: list[Any], source: Path
+) -> list[dict[str, Any]]:
+    """Return copies of annotation dicts that have a non-empty ``points`` key."""
+    result: list[dict[str, Any]] = []
+    for ann in raw:
+        if not isinstance(ann, dict):
+            LOGGER.warning("Ignoring malformed annotation in %s: expected dict", source)
+            continue
+        if not ann.get("points"):
+            LOGGER.debug("Skipping annotation without points in %s: type=%s", source, ann.get("type", "unknown"))
+            continue
+        result.append(deepcopy(ann))
+    return result
+
+
+def _rescale_if_needed(
+    annotations: list[dict[str, Any]],
+    stored_w: int,
+    stored_h: int,
+    target_size: tuple[int, int] | None,
+) -> list[dict[str, Any]]:
+    """Scale annotation points when *target_size* differs from stored dimensions."""
     if not annotations or target_size is None:
         return annotations
-
-    stored_width = int(metadata.get("image_width", 0))
-    stored_height = int(metadata.get("image_height", 0))
-    target_width, target_height = int(target_size[0]), int(target_size[1])
-    if stored_width < 1 or stored_height < 1:
+    target_w, target_h = int(target_size[0]), int(target_size[1])
+    if stored_w < 1 or stored_h < 1:
         return annotations
-    if stored_width == target_width and stored_height == target_height:
+    if stored_w == target_w and stored_h == target_h:
         return annotations
-
-    sx = target_width / float(stored_width)
-    sy = target_height / float(stored_height)
+    sx = target_w / float(stored_w)
+    sy = target_h / float(stored_h)
     return [scale_annotation_points(ann, sx, sy) for ann in annotations]

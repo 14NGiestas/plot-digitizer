@@ -43,12 +43,14 @@ def run_ai_segmentation(
         if cropped.sum() < MIN_COMPONENT_PIXELS:
             continue
         confidence = float(predictions[0].boxes.conf[index].cpu().item()) if predictions[0].boxes is not None else conf_threshold
+        class_id = int(predictions[0].boxes.cls[index].cpu().item()) if predictions[0].boxes is not None else None
         results.append(
             SegmentationResult(
                 dataset_id=f"dataset_{index}",
                 mask=cropped.astype(bool),
                 confidence=confidence,
                 method="ai",
+                class_id=class_id,
             )
         )
     return results

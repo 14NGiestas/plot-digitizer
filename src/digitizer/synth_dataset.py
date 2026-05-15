@@ -71,7 +71,7 @@ def generate_synthetic_dataset(
         raise ValueError(f"workers must be >= 1, got {workers}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    for subdir in ("images", "labels", "ground_truth"):
+    for subdir in ("images", "labels", "csv", "annotations"):
         (output_dir / subdir).mkdir(exist_ok=True)
 
     # Derive independent child seeds from the master SeedSequence.

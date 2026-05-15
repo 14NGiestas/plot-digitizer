@@ -44,7 +44,8 @@ def _write_synthetic_example(
     image_path = output_dir / "images" / f"plot_{index:04d}.{image_format}"
     label_path = output_dir / "labels" / f"plot_{index:04d}.txt"
     metadata_path = output_dir / "images" / f"plot_{index:04d}.metadata.json"
-    ground_truth_path = output_dir / "ground_truth" / f"plot_{index:04d}.csv"
+    annotations_path = output_dir / "annotations" / f"plot_{index:04d}.json"
+    ground_truth_path = output_dir / "csv" / f"plot_{index:04d}.csv"
     use_log_x = bool(rng.random() < LOG_X_PROBABILITY)
     x_range = ((LOG_X_MIN if use_log_x else 0.0), float(rng.uniform(6.0, 12.0)))
     x_values = np.geomspace(*x_range, 480) if use_log_x else np.linspace(*x_range, 480)
@@ -83,6 +84,7 @@ def _write_synthetic_example(
         image_format,
         label_path,
         metadata_path,
+        annotations_path,
         ground_truth_path,
         x_range,
         y_range,

@@ -3,19 +3,41 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
 
 from .ai_segmentation import run_ai_segmentation
+from .annotation_io import CLASS_MAPPING
 from .calibration import calibrate_axes
 from .constants import LOGGER
 from .cv_segmentation import run_cv_segmentation
 from .image_ops import load_image, preprocess_image, resolve_plot_box
-from .models import AxisReferencePair, DigitizeResult
+from .models import AxisReferencePair, DigitizeResult, SegmentationResult
 from .plotting import build_replot_frame, create_overlay, create_replot
 from .points import convert_points, extract_curve_points
+from .synth_render import _mask_to_yolo_polygon
+
+
+def _segmentations_to_yolo_label(
+    segmentations: list[SegmentationResult],
+) -> str:
+    """Convert segmentation masks to a YOLO segmentation label string.
+
+    Each mask is converted to a contour polygon.  The class ID is taken from
+    ``segmentation.class_id`` when available, otherwise defaults to 0 (curve).
+    """
+    lines: list[str] = []
+    for seg in segmentations:
+        polygon = _mask_to_yolo_polygon(seg.mask)
+        if not polygon:
+            continue
+        class_id = seg.class_id if seg.class_id is not None else CLASS_MAPPING.get("curve", 0)
+        lines.append(f"{class_id} " + " ".join(f"{v:.6f}" for v in polygon))
+    return "\n".join(lines)
+
 
 def digitize_image(
     image_path: Path,
@@ -33,8 +55,25 @@ def digitize_image(
     workers: int | None = None,
     auto_axis_anchors: bool = True,
 ) -> DigitizeResult:
-    """Digitize a single image and write CSV/JSON artifacts."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    """Digitize a single image and write artifacts under *output_dir*.
+
+    Output layout::
+
+        output_dir/
+            images/<stem>.<ext>          source image copy
+            images/<stem>.metadata.json  processing metadata sidecar
+            images/<stem>.replot.png     replot visualisation
+            images/<stem>.overlay.png    segmentation overlay (optional)
+            labels/<stem>.txt            YOLO segmentation labels from AI
+            csv/<stem>.csv               primary digitized (x, y) data
+            csv/<stem>.replot.csv        smoothed/interpolated replot data
+    """
+    images_dir = output_dir / "images"
+    labels_dir = output_dir / "labels"
+    csv_dir = output_dir / "csv"
+    for d in (images_dir, labels_dir, csv_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
     image = load_image(image_path)
     processed_gray, preprocess_stats = preprocess_image(image)
     plot_box = resolve_plot_box(image_path, image, processed_gray)
@@ -72,24 +111,40 @@ def digitize_image(
     if converted.empty:
         raise RuntimeError(f"No digitized points were extracted from {image_path}.")
 
-    csv_path = output_dir / f"{image_path.stem}.digitized.csv"
-    replot_csv_path = output_dir / f"{image_path.stem}.replot.csv"
-    metadata_path = output_dir / f"{image_path.stem}.metadata.json"
-    replot_path = output_dir / f"{image_path.stem}.replot.png"
-    overlay_path = output_dir / f"{image_path.stem}.overlay.png" if create_overlay_image else None
+    # Build output paths under the unified subdirectory structure.
+    dest_image = images_dir / image_path.name
+    csv_path = csv_dir / f"{image_path.stem}.csv"
+    replot_csv_path = csv_dir / f"{image_path.stem}.replot.csv"
+    metadata_path = images_dir / f"{image_path.stem}.metadata.json"
+    replot_path = images_dir / f"{image_path.stem}.replot.png"
+    label_path = labels_dir / f"{image_path.stem}.txt"
+    overlay_path = images_dir / f"{image_path.stem}.overlay.png" if create_overlay_image else None
 
+    # Copy source image into images/.
+    shutil.copy2(image_path, dest_image)
+
+    # Primary CSV output: digitized (x, y) data.
     converted[["dataset_id", "x_real", "y_real", "confidence"]].to_csv(csv_path, index=False)
+
+    # Replot CSV and PNG.
     replot_frame = build_replot_frame(converted, x_scale=calibration.x_scale)
     replot_frame.to_csv(replot_csv_path, index=False)
     create_replot(replot_frame, calibration, image_path.name, replot_path)
+
+    # YOLO labels from AI segmentation (metadata / annotations).
+    label_content = _segmentations_to_yolo_label(segmentations)
+    label_path.write_text(label_content)
+
     metadata = {
         "input_image": str(image_path),
+        "image": str(dest_image),
         "plot_box": asdict(plot_box),
         "axis": asdict(calibration),
         "exports": {
-            "digitized_csv": str(csv_path),
+            "csv": str(csv_path),
             "replot_csv": str(replot_csv_path),
             "replot_image": str(replot_path),
+            "labels": str(label_path),
             "overlay_image": str(overlay_path) if overlay_path else None,
         },
         "preprocessing": preprocess_stats,
@@ -120,5 +175,6 @@ def digitize_image(
         overlay_path=overlay_path,
         point_count=int(len(converted)),
         dataset_count=int(converted["dataset_id"].nunique()),
+        label_path=label_path,
     )
 

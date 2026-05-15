@@ -173,6 +173,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "replot_csv_path": str(result.replot_csv_path),
                     "metadata_path": str(result.metadata_path),
                     "replot_path": str(result.replot_path),
+                    "label_path": str(result.label_path) if result.label_path else None,
                     "overlay_path": str(result.overlay_path) if result.overlay_path else None,
                     "point_count": result.point_count,
                     "dataset_count": result.dataset_count,

@@ -80,6 +80,7 @@ class SegmentationResult:
     confidence: float
     method: str
     split_components: bool = False
+    class_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -93,4 +94,5 @@ class DigitizeResult:
     overlay_path: Path | None
     point_count: int
     dataset_count: int
+    label_path: Path | None = None
 

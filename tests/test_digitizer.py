@@ -52,7 +52,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 plot_type="general",
             )
             image_path = next((dataset_dir / "images").glob("*.png"))
-            truth_csv = next((dataset_dir / "ground_truth").glob("*.csv"))
+            truth_csv = next((dataset_dir / "csv").glob("*.csv"))
 
             result = digitizer.digitize_image(
                 image_path=image_path,
@@ -93,6 +93,10 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertIn("exports", metadata)
             self.assertEqual(metadata["exports"]["replot_csv"], str(result.replot_csv_path))
             self.assertEqual(metadata["exports"]["replot_image"], str(result.replot_path))
+            self.assertEqual(metadata["exports"]["csv"], str(result.csv_path))
+            self.assertIsNotNone(result.label_path)
+            assert result.label_path is not None
+            self.assertTrue(result.label_path.exists())
             method_counts_are_ints = all(isinstance(value, int) for value in metadata["segmentation"]["method_counts"].values())
             self.assertTrue(method_counts_are_ints)
 
@@ -263,7 +267,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 par_dir, count=4, seed=99, image_format="png", plot_type="mixed", workers=2
             )
 
-            for subdir in ("images", "labels", "ground_truth"):
+            for subdir in ("images", "labels", "csv"):
                 seq_files = sorted(f.name for f in (seq_dir / subdir).iterdir())
                 par_files = sorted(f.name for f in (par_dir / subdir).iterdir())
                 self.assertEqual(seq_files, par_files, f"File list mismatch in {subdir}/")
@@ -582,7 +586,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
     def test_write_synthetic_example_draws_vbar_hbar_and_error_bar_on_main_axis(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for subdir in ("images", "labels", "ground_truth"):
+            for subdir in ("images", "labels", "csv", "annotations"):
                 (root / subdir).mkdir()
             rng = np.random.default_rng(7)
             solid_mask = np.zeros((120, 120), dtype=bool)
@@ -769,6 +773,7 @@ class AnnotationIOTests(unittest.TestCase):
             self.assertTrue(Path(result["image_path"]).exists())
             self.assertTrue(Path(result["label_path"]).exists())
             self.assertTrue(Path(result["metadata_path"]).exists())
+            self.assertTrue(Path(result["annotations_path"]).exists())
 
             label_text = Path(result["label_path"]).read_text()
             lines = [l for l in label_text.splitlines() if l.strip()]
@@ -784,6 +789,12 @@ class AnnotationIOTests(unittest.TestCase):
             self.assertEqual(metadata["image_width"], 100)
             self.assertEqual(metadata["image_height"], 100)
             self.assertEqual(metadata["label_count"], 3)
+            self.assertNotIn("annotations", metadata)
+            self.assertIn("annotations_path", metadata)
+
+            ann_data = json.loads(Path(result["annotations_path"]).read_text())
+            self.assertEqual(len(ann_data["annotations"]), 3)
+            self.assertEqual(ann_data["image_width"], 100)
 
     def test_save_training_sample_resize_scales_annotations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -800,11 +811,40 @@ class AnnotationIOTests(unittest.TestCase):
             self.assertEqual(metadata["source_image_height"], 100)
             self.assertEqual(metadata["image_width"], 100)
             self.assertEqual(metadata["image_height"], 50)
-            scaled_pt = metadata["annotations"][0]["points"][0]
+
+            ann_data = json.loads(Path(result["annotations_path"]).read_text())
+            scaled_pt = ann_data["annotations"][0]["points"][0]
             self.assertAlmostEqual(float(scaled_pt[0]), 50.0, places=3)
             self.assertAlmostEqual(float(scaled_pt[1]), 25.0, places=3)
 
     def test_load_training_sample_annotations_rescales_to_target_size(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "out"
+            ann_dir = output_dir / "annotations"
+            ann_dir.mkdir(parents=True, exist_ok=True)
+            ann_path = ann_dir / "plot.json"
+            ann_path.write_text(
+                json.dumps(
+                    {
+                        "image_width": 100,
+                        "image_height": 50,
+                        "annotations": [{"type": "x_anchor", "points": [(50, 25)], "point_size": 6.0}],
+                    }
+                )
+            )
+            loaded = load_training_sample_annotations(
+                image_path=root / "plot.png",
+                output_dir=output_dir,
+                target_size=(200, 100),
+            )
+            self.assertEqual(len(loaded), 1)
+            point = loaded[0]["points"][0]
+            self.assertAlmostEqual(float(point[0]), 100.0, places=3)
+            self.assertAlmostEqual(float(point[1]), 50.0, places=3)
+
+    def test_load_training_sample_annotations_legacy_metadata_fallback(self) -> None:
+        """Metadata with embedded annotations is still readable (backward compat)."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             output_dir = root / "out"
