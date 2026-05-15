@@ -14,6 +14,7 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
+import cv2
 import numpy as np
 import pandas as pd
 
@@ -103,9 +104,9 @@ class DigitizerWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             image_path = root / "plot.png"
-            image_path.write_bytes(b"stub")
             output_dir = root / "digitized"
             image = np.zeros((10, 10, 3), dtype=np.uint8)
+            cv2.imwrite(str(image_path), image)
             processed_gray = np.zeros((10, 10), dtype=np.uint8)
             plot_box = digitizer.PlotBox(left=0, top=0, right=10, bottom=10)
             calibration = digitizer.AxisCalibration(

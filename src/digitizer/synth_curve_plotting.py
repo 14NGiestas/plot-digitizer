@@ -23,14 +23,14 @@ from .synth_render import _mask_to_yolo_polygon
 
 def _style_axis_text(ax: Any, rng: np.random.Generator, title: str, xlabel: str, ylabel: str) -> None:
     """Apply varied typography so synthetic plots cover more visual styles."""
-    font_family = str(rng.choice(["DejaVu Sans", "DejaVu Serif", "STIXGeneral", "monospace"]))
-    label_font_family = str(rng.choice([font_family, "sans-serif", "serif"]))
+    font_family = rng.choice(["DejaVu Sans", "DejaVu Serif", "STIXGeneral", "monospace"])
+    label_font_family = rng.choice([font_family, "sans-serif", "serif"])
     title_size = float(rng.uniform(11.0, 16.5))
     label_size = float(rng.uniform(9.0, 13.5))
     tick_size = float(rng.uniform(7.0, 11.0))
-    title_weight = str(rng.choice(["normal", "medium", "semibold", "bold"]))
-    label_weight = str(rng.choice(["normal", "normal", "medium", "semibold"]))
-    title_style = str(rng.choice(["normal", "normal", "italic"]))
+    title_weight = rng.choice(["normal", "medium", "semibold", "bold"])
+    label_weight = rng.choice(["normal", "normal", "medium", "semibold"])
+    title_style = rng.choice(["normal", "normal", "italic"])
     x_rotation = int(rng.choice([0, 0, 0, 15, -15, 30, 45]))
     y_rotation = int(rng.choice([0, 0, 0, 10, -10]))
 
@@ -41,7 +41,7 @@ def _style_axis_text(ax: Any, rng: np.random.Generator, title: str, xlabel: str,
         axis="both",
         which="both",
         labelsize=tick_size,
-        direction=str(rng.choice(["in", "out", "inout"])),
+        direction=rng.choice(["in", "out", "inout"]),
         length=float(rng.uniform(3.0, 6.5)),
         width=float(rng.uniform(0.8, 1.6)),
     )
@@ -63,7 +63,8 @@ def _create_plot_axes(fig_size: tuple[float, float], dpi: int, x_range: tuple[fl
         ax.grid(False)
     for spine in ax.spines.values():
         spine.set_linestyle(str(rng.choice(["-", "--", ":"])))
-        spine.set_linewidth(float(rng.uniform(0.8, 1.8)))
+        spine_width = float(rng.uniform(0.8, 1.8))
+        spine.set_linewidth(spine_width)
     ax.set_xlim(*x_range)
     return fig, ax
 

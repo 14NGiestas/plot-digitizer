@@ -50,7 +50,7 @@ def _select_digitization_segmentations(
     if not segmentations:
         return []
     curve_class_id = CLASS_MAPPING.get("curve")
-    if all(seg.class_id is None for seg in segmentations):
+    if curve_class_id is None or all(seg.class_id is None for seg in segmentations):
         return segmentations
     curve_segmentations = [
         segmentation
