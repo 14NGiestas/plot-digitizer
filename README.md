@@ -1,271 +1,115 @@
 # plot-digitizer
 
-Automatic AI-assisted plot digitizer available as a Python package.
+Automatic AI-assisted plot digitizer (synthetic data generation, training, digitization, validation).
 
-## Installation
+## Quick start
 
-### Nix (flake)
+### Nix (recommended)
 
-`nixpkgs` is intentionally pinned to commit
-`50ab793786d9de88ee30ec4e4c24fb4236fc2674` (same pin used in
-`14NGiestas/mfi`).
+```bash
+# CPU
+nix develop
 
-Use the shell that matches your hardware:
+# AMD ROCm
+nix develop .#rocm
 
-| Shell | Command | Use case |
-|---|---|---|
-| `default` / `cpu-only` | `nix develop` or `nix develop .#cpu-only` | CPU inference, CI |
-| `rocm` | `nix develop .#rocm` | AMD GPU (ROCm/HIP) |
-| `cuda` | `nix develop .#cuda` | NVIDIA GPU (CUDA) |
-| `cuda-legacy` | `nix develop .#cuda-legacy` | NVIDIA legacy driver stack (470-class / CUDA 11.8 userspace) |
+# NVIDIA CUDA
+nix develop .#cuda
+```
 
-Inside these shells, `digitizer` is already available. The AI-capable shells
-(`default` / `cpu-only`, `rocm`, `cuda`, and `cuda-legacy`) include
-`ultralytics` as a proper Nix package by default. On first entry, each shell
-**automatically creates an accelerator-specific virtual environment**
-(`.venv-ai-cpu`, `.venv-ai-rocm`, `.venv-ai-cuda`, or `.venv-ai-cuda-legacy`)
-with `--system-site-packages` and installs `torch`/`torchvision` from the matching
-PyTorch wheel index:
-
-| Shell | PyTorch wheel index |
-|---|---|
-| `default` / `cpu-only` | `https://download.pytorch.org/whl/cpu` |
-| `rocm` | `https://download.pytorch.org/whl/rocm6.2` |
-| `cuda` | `https://download.pytorch.org/whl/cu124` |
-| `cuda-legacy` | `https://download.pytorch.org/whl/cu118` |
-
-The venv is re-used on subsequent shell entries (no re-download). After entering
-the shell, `digitizer train --execute` works without any manual pip steps.
-
-> **AMD APU note (Ryzen 7 8745HS / Radeon 780M):** The `rocm` shell automatically sets
-> `HSA_OVERRIDE_GFX_VERSION=11.0.3` so the ROCm runtime recognises the Hawk Point
-> integrated GPU (gfx1103 / RDNA3). The iGPU shares the system DDR5 RAM as unified
-> GPU memory (16 GB visible as GTT).
-
-To run the test suite in a Nix environment:
+Run tests:
 
 ```bash
 nix develop --command sh -c "PYTHONPATH=src python -m unittest discover -s tests -p 'test_*.py' -v"
 ```
 
-To run the packaged app through the flake:
+### Local install (uv)
 
 ```bash
-nix run . -- --help
-```
-
-### Install directly from Git with uv
-
-```bash
-# Install the base package (CV-based digitization)
-uv add git+https://github.com/14NGiestas/plot-digitizer.git
-
-# Install with AI segmentation support (bring your own torch accelerator build)
-uv add "git+https://github.com/14NGiestas/plot-digitizer.git[ai]"
-
-# Or install AI support with CPU torch in one step
-uv add "git+https://github.com/14NGiestas/plot-digitizer.git[ai-cpu]"
-
-# Or install for development
-uv add --dev "git+https://github.com/14NGiestas/plot-digitizer.git[dev]"
-```
-
-### Install from local source
-
-```bash
-# Create a virtual environment and install
 uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install -e .
-
-# Or install with optional dependencies
-uv pip install -e ".[ai]"      # AI tooling only (install torch separately for CUDA/ROCm/CPU)
-uv pip install -e ".[ai-cpu]"  # AI tooling + CPU torch
-uv pip install -e ".[dev]"     # Development tools
+source .venv/bin/activate
+uv pip install -e ".[dev]"
 ```
 
-### AI accelerator installs (CUDA / ROCm / CPU)
-
-Install torch + torchvision first for your accelerator, then install `digitizer[ai]`:
+## Core commands
 
 ```bash
-# CUDA (example: CUDA 12.4)
-uv pip install --index-url https://download.pytorch.org/whl/cu124 torch torchvision
-uv pip install "git+https://github.com/14NGiestas/plot-digitizer.git[ai]"
-
-# ROCm (example: ROCm 6.2)
-uv pip install --index-url https://download.pytorch.org/whl/rocm6.2 torch torchvision
-uv pip install "git+https://github.com/14NGiestas/plot-digitizer.git[ai]"
-
-# CPU
-uv pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
-uv pip install "git+https://github.com/14NGiestas/plot-digitizer.git[ai]"
-```
-
-## Usage
-
-Once installed, use the `digitizer` command:
-
-```bash
-# Generate synthetic plots for training/testing
-digitizer generate --output-dir synthetic-data --count 8
-
-# Digitize plot images
-digitizer digitize synthetic-data/images --output-dir digitized --overlay
-
-# Validate digitized results against ground truth
-digitizer validate \
-  --prediction-csv digitized/plot_0000.digitized.csv \
-  --truth-csv synthetic-data/ground_truth/plot_0000.csv
-```
-
-Each `digitize` run now writes:
-
-- `*.digitized.csv`: raw extracted points in tidy format
-- `*.replot.csv`: one shared `x_real` column plus one y-column per detected dataset for quick replotting
-- `*.replot.png`: a clean rendered plot of the digitized datasets
-- `*.metadata.json`: calibration and segmentation metadata, including artifact paths
-- `*.overlay.png`: optional overlay when `--overlay` is requested
-
-### Training workflow (new, continue, and fine-tune)
-
-```bash
-# 1) Generate a synthetic dataset for segmentation training
+# Generate synthetic data
 digitizer generate --output-dir synthetic-data --count 200
 
-# 2) Print a training plan (no training yet)
+# Train (plan only)
+digitizer train --dataset-dir synthetic-data --output-dir training-runs --epochs 50
+
+# Train (execute)
+digitizer train --dataset-dir synthetic-data --output-dir training-runs --epochs 50 --execute
+
+# Digitize images
+digitizer digitize synthetic-data/images --output-dir digitized --overlay
+
+# Validate against truth
+digitizer validate \
+  --prediction-csv digitized/plot_0000.digitized.csv \
+  --truth-csv synthetic-data/csv/plot_0000.csv
+```
+
+## Curriculum dataset generation
+
+`generate` now supports:
+
+- `--difficulty {0,1,2,3,4}`
+- `--curriculum` (round-robin stages 1→2→3→4)
+
+Examples:
+
+```bash
+# Fixed stage
+digitizer generate --output-dir synthetic-stage1 --count 200 --difficulty 1
+
+# Balanced curriculum mix
+digitizer generate --output-dir synthetic-curriculum --count 800 --curriculum
+```
+
+## Curriculum training presets (`runs/*.yml`)
+
+Added per-stage training presets:
+
+- `runs/curriculum_stage1.yml`
+- `runs/curriculum_stage2.yml`
+- `runs/curriculum_stage3.yml`
+- `runs/curriculum_stage4.yml`
+
+Use them with `--hyp-yaml`:
+
+```bash
+# Stage 1
 digitizer train \
-  --dataset-dir synthetic-data \
-  --output-dir training-runs \
+  --dataset-dir synthetic-stage1 \
+  --output-dir training-runs-stage1 \
   --weights yolov8n-seg.pt \
-  --epochs 50
-
-# 3) Execute a new training run
-digitizer train \
-  --dataset-dir synthetic-data \
-  --output-dir training-runs \
-  --weights yolov8n-seg.pt \
-  --epochs 50 \
+  --hyp-yaml runs/curriculum_stage1.yml \
   --execute
 
-# 4) Execute a recall-focused run with mosaic disabled and tuned overrides
+# Stage 2 (continue)
 digitizer train \
-  --dataset-dir synthetic-data \
-  --output-dir training-runs \
-  --weights training-runs/synthetic_plot_digitizer/weights/last.pt \
-  --epochs 253 \
-  --imgsz 768 \
-  --batch 6 \
-  --hyp-yaml runs/hyp_plot_recall.yaml \
-  --execute
-
-# 5) Continue training from a previous checkpoint (resume)
-digitizer train \
-  --dataset-dir synthetic-data \
-  --output-dir training-runs \
-  --weights training-runs/synthetic_plot_digitizer/weights/last.pt \
-  --epochs 30 \
-  --execute
-
-# 6) Fine-tune from best checkpoint on updated data
-digitizer train \
-  --dataset-dir synthetic-data \
-  --output-dir training-runs-finetune \
-  --weights training-runs/synthetic_plot_digitizer/weights/best.pt \
-  --epochs 20 \
+  --dataset-dir synthetic-stage2 \
+  --output-dir training-runs-stage2 \
+  --weights training-runs-stage1/synthetic_plot_digitizer/weights/last.pt \
+  --hyp-yaml runs/curriculum_stage2.yml \
   --execute
 ```
 
-### Diagnostics toolkit
+Repeat similarly for stages 3 and 4 with their matching YAML files.
 
-```bash
-# Run per-class metrics, confidence histogram, and worst-recall overlays
-python scripts/yolo_diagnostics.py \
-  --model training-runs/synthetic_plot_digitizer/weights/best.pt \
-  --data-yaml synthetic-data/dataset.yaml \
-  --images-dir synthetic-data/images \
-  --labels-dir synthetic-data/labels \
-  --output-dir training-runs/diagnostics \
-  --conf 0.10 \
-  --iou 0.60 \
-  --target-classes 0 \
-  --worst-k 20
-```
+## Useful options
 
-### Predict on a real plot image
+- `digitizer digitize --weights model.pt` supports `.pt` or `.onnx`.
+- `digitizer digitize --x-reference "...,...\" --y-reference \"...,...\"` for known axis points.
+- `digitizer digitize --interactive-axis-selection` for GUI point picking.
+- `digitizer train --workers N --execute` sets both dataloader workers and torch CPU thread pools.
 
-```bash
-# Use a trained model to predict (segment + digitize) one or more real plots
-digitizer digitize real-plots \
-  --output-dir predictions \
-  --weights training-runs/synthetic_plot_digitizer/weights/best.pt \
-  --overlay
-```
+## Commands summary
 
-### Axis calibration with known points (instead of extremities)
-
-If axis limits are not at the visible extremities, pass two known points per axis:
-
-```bash
-# Format:
-# --x-reference "x_pixel_1:x_real_1,x_pixel_2:x_real_2"
-# --y-reference "y_pixel_1:y_real_1,y_pixel_2:y_real_2"
-digitizer digitize real-plots/plot.png \
-  --output-dir predictions \
-  --weights training-runs/synthetic_plot_digitizer/weights/best.pt \
-  --x-reference "120:0,880:10" \
-  --y-reference "710:0,120:100"
-```
-
-When explicit references are not provided, the digitizer now attempts to auto-detect axis anchor pixels from strong axis lines and uses the resolved axis ranges for calibration. Disable this fallback with:
-
-```bash
-digitizer digitize real-plots/plot.png --disable-auto-axis-anchors
-```
-
-You can also select those axis points interactively:
-
-```bash
-digitizer digitize real-plots/plot.png \
-  --output-dir predictions \
-  --interactive-axis-selection \
-  --weights training-runs/synthetic_plot_digitizer/weights/best.pt
-```
-
-Interactive selection supports point editing:
-
-- Left click to add/select points, then drag to move them precisely.
-- Right click near a point to remove it and re-place it.
-- A zoom panel shows a magnified view of the currently selected point.
-- Press `Enter` when all 4 points are set (`X1, X2, Y1, Y2`), or `Esc` to cancel.
-
-After interactive selection completes, the CLI logs exact reusable arguments:
-
-```text
---x-reference "<px1>:<real1>,<px2>:<real2>" --y-reference "<px1>:<real1>,<px2>:<real2>"
-```
-
-### Using without installation (uv run from Git)
-
-You can also run commands directly from the Git repository without installing:
-
-```bash
-uv run --from git+https://github.com/14NGiestas/plot-digitizer.git digitizer generate --output-dir synthetic-data --count 8
-```
-
-## Commands
-
-- `generate`: create synthetic plots, YOLO segmentation labels, sidecar metadata, and ground-truth CSV files
-- `train`: print or execute an Ultralytics YOLOv8 segmentation training plan
-- `digitize`: run AI segmentation when weights are provided and fall back to deterministic CV clustering otherwise; supports known-point axis calibration via `--x-reference/--y-reference` or interactive selection, and writes raw plus replot-friendly exports
-- `validate`: compare a digitized CSV with ground truth and report error metrics
-
-## Notes
-
-- Axis ranges are resolved from CLI hints first, then synthetic sidecar metadata, then safe `0:1` defaults.
-- Pass `--x-range min:max` and `--y-range min:max` when auto-detection is unavailable.
-- `digitize --weights model.pt` supports `.pt` or `.onnx` Ultralytics-compatible weights.
-- `train --hyp-yaml path/to/file.yaml` passes Ultralytics override configuration (`cfg`) for training hyperparameters.
-- `train --workers N --execute` applies `N` to both Ultralytics DataLoader workers and torch CPU thread pools.
-- The `ai` optional dependency installs `ultralytics` only; install torch/torchvision for your accelerator (CUDA, ROCm, or CPU).
-- Use `ai-cpu` for a one-step CPU installation.
+- `generate`: synthetic plots + labels + metadata + CSV
+- `train`: plan or execute YOLO segmentation training
+- `digitize`: segment and convert plots to numeric CSV
+- `validate`: compare predicted CSV to ground truth
