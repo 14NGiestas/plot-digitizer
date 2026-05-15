@@ -99,6 +99,85 @@ class DigitizerWorkflowTests(unittest.TestCase):
             method_counts_are_ints = all(isinstance(value, int) for value in metadata["segmentation"]["method_counts"].values())
             self.assertTrue(method_counts_are_ints)
 
+    def test_digitize_image_ignores_non_curve_ai_detections(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            image_path = root / "plot.png"
+            image_path.write_bytes(b"stub")
+            output_dir = root / "digitized"
+            image = np.zeros((10, 10, 3), dtype=np.uint8)
+            processed_gray = np.zeros((10, 10), dtype=np.uint8)
+            plot_box = digitizer.PlotBox(left=0, top=0, right=10, bottom=10)
+            calibration = digitizer.AxisCalibration(
+                x_min=1.0,
+                x_max=10.0,
+                y_min=0.0,
+                y_max=1.0,
+                x_scale="log",
+            )
+            non_curve = digitizer.SegmentationResult(
+                dataset_id="plot_area",
+                mask=np.ones((10, 10), dtype=bool),
+                confidence=0.99,
+                method="ai",
+                class_id=5,
+            )
+            curve = digitizer.SegmentationResult(
+                dataset_id="curve",
+                mask=np.ones((10, 10), dtype=bool),
+                confidence=0.88,
+                method="ai",
+                class_id=0,
+            )
+            curve_points = pd.DataFrame(
+                {
+                    "dataset_id": ["curve_a", "curve_a"],
+                    "x_px": [0.0, 9.0],
+                    "y_px": [9.0, 0.0],
+                    "confidence": [0.88, 0.88],
+                    "segmentation_method": ["ai", "ai"],
+                }
+            )
+            replot_frame = pd.DataFrame({"x_real": [1.0, 10.0], "curve_a": [0.0, 1.0]})
+
+            with (
+                patch("digitizer.digitize_workflow.load_image", return_value=image),
+                patch("digitizer.digitize_workflow.preprocess_image", return_value=(processed_gray, {})),
+                patch("digitizer.digitize_workflow.resolve_plot_box", return_value=plot_box),
+                patch("digitizer.digitize_workflow.calibrate_axes", return_value=(calibration, {})),
+                patch("digitizer.digitize_workflow.run_ai_segmentation", return_value=[non_curve, curve]),
+                patch("digitizer.digitize_workflow.run_cv_segmentation") as mock_cv,
+                patch("digitizer.digitize_workflow.extract_curve_points", return_value=curve_points) as mock_extract,
+                patch("digitizer.digitize_workflow.build_replot_frame", return_value=replot_frame),
+                patch("digitizer.digitize_workflow.create_replot"),
+                patch("digitizer.digitize_workflow.create_overlay") as mock_overlay,
+                patch("digitizer.digitize_workflow._segmentations_to_yolo_label", return_value="0 0.1 0.1 0.9 0.9"),
+            ):
+                result = digitizer.digitize_image(
+                    image_path=image_path,
+                    output_dir=output_dir,
+                    x_range=None,
+                    y_range=None,
+                    x_reference=None,
+                    y_reference=None,
+                    x_scale="linear",
+                    y_scale="linear",
+                    invert_y=False,
+                    weights="best.pt",
+                    conf_threshold=0.25,
+                    create_overlay_image=True,
+                )
+
+            mock_cv.assert_not_called()
+            mock_extract.assert_called_once()
+            self.assertEqual(mock_extract.call_args.args[0].class_id, 0)
+            overlay_segmentations = mock_overlay.call_args.args[2]
+            self.assertEqual(len(overlay_segmentations), 1)
+            self.assertEqual(overlay_segmentations[0].class_id, 0)
+            exported = pd.read_csv(result.csv_path)
+            self.assertEqual(list(exported["dataset_id"].unique()), ["curve_a"])
+            self.assertTrue(np.issubdtype(exported["x_real"].dtype, np.floating))
+
     def test_render_curve_mask_marks_curve_not_background(self) -> None:
         x_values = np.linspace(0.0, 10.0, 200)
         y_values = np.sin(x_values)

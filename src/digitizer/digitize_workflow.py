@@ -43,6 +43,23 @@ def _segmentations_to_yolo_label(
     return "\n".join(lines)
 
 
+def _select_digitization_segmentations(
+    segmentations: list[SegmentationResult],
+) -> list[SegmentationResult]:
+    """Keep only curve masks when AI predictions include class IDs."""
+    if not segmentations:
+        return []
+    curve_class_id = CLASS_MAPPING.get("curve")
+    if all(seg.class_id is None for seg in segmentations):
+        return segmentations
+    curve_segmentations = [
+        segmentation
+        for segmentation in segmentations
+        if segmentation.class_id in (None, curve_class_id)
+    ]
+    return curve_segmentations
+
+
 def digitize_image(
     image_path: Path,
     output_dir: Path,
@@ -102,14 +119,31 @@ def digitize_image(
         conf_threshold,
         workers=workers,
     )
+    if segmentations:
+        filtered_segmentations = _select_digitization_segmentations(segmentations)
+        ignored_detection_count = len(segmentations) - len(filtered_segmentations)
+        if ignored_detection_count:
+            LOGGER.info(
+                "Ignoring %s non-curve AI detection(s) for %s during point extraction.",
+                ignored_detection_count,
+                image_path.name,
+            )
+        segmentations = filtered_segmentations
     if not segmentations:
         LOGGER.info("AI segmentation unavailable or empty for %s; using CV fallback.", image_path.name)
         segmentations = run_cv_segmentation(image, plot_box)
     if not segmentations:
         raise RuntimeError(f"Unable to isolate curves in {image_path}. Try passing --x-range/--y-range or a segmentation model.")
 
-    point_frames = [extract_curve_points(segmentation, plot_box) for segmentation in segmentations]
-    combined = pd.concat(point_frames, ignore_index=True) if point_frames else pd.DataFrame()
+    point_frames: list[pd.DataFrame] = []
+    for segmentation in segmentations:
+        frame = extract_curve_points(segmentation, plot_box)
+        if frame.empty:
+            continue
+        point_frames.append(frame)
+    if not point_frames:
+        raise RuntimeError(f"No digitized points were extracted from {image_path}.")
+    combined = pd.concat(point_frames, ignore_index=True)
     combined = combined.dropna().sort_values(["dataset_id", "x_px"]).reset_index(drop=True)
     converted = convert_points(combined, calibration, plot_box)
     if converted.empty:
@@ -181,4 +215,3 @@ def digitize_image(
         dataset_count=int(converted["dataset_id"].nunique()),
         label_path=label_path,
     )
-
