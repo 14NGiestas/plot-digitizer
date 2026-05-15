@@ -175,7 +175,7 @@
           let
             rocmPkgs = if pkgs ? pkgsRocm then pkgs.pkgsRocm else pkgs;
             cudaPkgs = if pkgs ? pkgsCuda then pkgs.pkgsCuda else pkgs;
-            cudaLegacyPkgs = pkgs.cudaPackages_11_8;
+            cudaLegacyPkgs = pkgs.cudaPackages_11_4;
             # Prefer legacy-set Python first (python310 when exposed) for CUDA
             # 11.8 compatibility, then progressively fall back to broader sets.
             cudaLegacyPython =
