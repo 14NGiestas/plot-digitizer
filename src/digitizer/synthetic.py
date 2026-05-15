@@ -8,6 +8,7 @@ import logging
 import math
 import multiprocessing
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -306,9 +307,27 @@ def _apply_degradation_filters(image_path: Path, rng: np.random.Generator) -> No
                  image_path.name, apply_jpeg, apply_noise, apply_blur, apply_contrast, apply_bw, apply_salt_pepper)
 
 
-def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Generator, image_format: str, 
-                             plot_type: str = "general") -> None:
+def _write_synthetic_example(
+    index: int,
+    output_dir: Path,
+    rng: np.random.Generator,
+    image_format: str,
+    plot_type: str = "general",
+    *,
+    apply_degradation_filters_fn: Any = None,
+    render_curve_mask_fn: Any = None,
+    render_vbar_mask_fn: Any = None,
+    render_hbar_mask_fn: Any = None,
+    render_arrow_mask_fn: Any = None,
+    render_error_bar_mask_fn: Any = None,
+) -> None:
     """Generate a synthetic plot with support for bandstructures and complex annotations."""
+    apply_degradation_filters_fn = apply_degradation_filters_fn or _apply_degradation_filters
+    render_curve_mask_fn = render_curve_mask_fn or _render_curve_mask
+    render_vbar_mask_fn = render_vbar_mask_fn or _render_vbar_mask
+    render_hbar_mask_fn = render_hbar_mask_fn or _render_hbar_mask
+    render_arrow_mask_fn = render_arrow_mask_fn or _render_arrow_mask
+    render_error_bar_mask_fn = render_error_bar_mask_fn or _render_error_bar_mask
     fig_size = (6.0, 4.2)
     dpi = DEFAULT_DPI
     image_name = f"plot_{index:04d}.{image_format}"
@@ -400,7 +419,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         dataset_id = f"dataset_{curve_index}"
         curve_descriptors.append({"dataset_id": dataset_id, "curve_type": curve_type, **style})
         ground_truth_frames.append(pd.DataFrame({"dataset_id": dataset_id, "x_real": x_values, "y_real": y_values}))
-        mask = _render_curve_mask(
+        mask = render_curve_mask_fn(
             fig_size,
             dpi,
             x_values,
@@ -429,7 +448,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
             linewidth=vbar_width,
             linestyle=style["linestyle"],
         )
-        mask = _render_vbar_mask(fig_size, dpi, x_pos, y_range, vbar_width, style)
+        mask = render_vbar_mask_fn(fig_size, dpi, x_pos, y_range, vbar_width, style)
         polygon = _mask_to_yolo_polygon(mask)
         if polygon:
             class_id = 1  # vbar class
@@ -448,7 +467,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         hbar_height = rng.uniform(1.0, 2.5)
         style = {"linewidth": hbar_height, "linestyle": "--"}
         ax.axhline(y=y_pos, xmin=0, xmax=1, color="black", linewidth=hbar_height, linestyle=style["linestyle"])
-        mask = _render_hbar_mask(fig_size, dpi, y_pos_norm, x_range, hbar_height, style, x_scale="log" if use_log_x else "linear")
+        mask = render_hbar_mask_fn(fig_size, dpi, y_pos_norm, x_range, hbar_height, style, x_scale="log" if use_log_x else "linear")
         polygon = _mask_to_yolo_polygon(mask)
         if polygon:
             class_id = 2  # hbar class
@@ -472,7 +491,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
             xytext=(_x_norm_to_data(start[0]), _y_norm_to_data(start[1])),
             arrowprops={"arrowstyle": "->", "color": "black", "lw": style["linewidth"]},
         )
-        mask = _render_arrow_mask(fig_size, dpi, start, end, style)
+        mask = render_arrow_mask_fn(fig_size, dpi, start, end, style)
         polygon = _mask_to_yolo_polygon(mask)
         if polygon:
             class_id = 3  # arrow class
@@ -501,7 +520,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
             elinewidth=style["linewidth"],
             capsize=style["cap_width"] * fig_size[0] * dpi,
         )
-        mask = _render_error_bar_mask(fig_size, dpi, x_pos, y_pos, y_err, style)
+        mask = render_error_bar_mask_fn(fig_size, dpi, x_pos, y_pos, y_err, style)
         polygon = _mask_to_yolo_polygon(mask)
         if polygon:
             class_id = 4  # error_bar class
@@ -530,7 +549,7 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
     plt.close(fig)
     
     # Apply degradation filters to simulate old/scanned article quality
-    _apply_degradation_filters(image_path, rng)
+    apply_degradation_filters_fn(image_path, rng)
 
     ground_truth = pd.concat(ground_truth_frames, ignore_index=True)
     ground_truth.to_csv(ground_truth_path, index=False)
@@ -551,7 +570,15 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
     metadata_path.write_text(json.dumps(metadata, indent=2))
 
 
-SampleGenerationTask = tuple[int, Path, np.random.SeedSequence, str, str]
+@dataclass(frozen=True, slots=True)
+class SampleGenerationTask:
+    """Parameters for generating one synthetic sample."""
+
+    index: int
+    output_dir: Path
+    child_seed: np.random.SeedSequence
+    image_format: str
+    plot_type: str
 
 
 def _generate_one_sample(args: SampleGenerationTask) -> None:
@@ -560,9 +587,8 @@ def _generate_one_sample(args: SampleGenerationTask) -> None:
     Accepts a tuple so it can be passed through :func:`ProcessPoolExecutor.map`
     without requiring Python 3.12+ keyword-argument pickling.
     """
-    index, output_dir, child_seed, image_format, plot_type = args
-    rng = np.random.default_rng(child_seed)
-    _write_synthetic_example(index, output_dir, rng, image_format, plot_type)
+    rng = np.random.default_rng(args.child_seed)
+    _write_synthetic_example(args.index, args.output_dir, rng, args.image_format, args.plot_type)
 
 
 def generate_synthetic_dataset(
@@ -612,7 +638,13 @@ def generate_synthetic_dataset(
     ]
 
     tasks: list[SampleGenerationTask] = [
-        (i, output_dir, sample_seeds[i], image_format, plot_types[i])
+        SampleGenerationTask(
+            index=i,
+            output_dir=output_dir,
+            child_seed=sample_seeds[i],
+            image_format=image_format,
+            plot_type=plot_types[i],
+        )
         for i in range(count)
     ]
 
@@ -737,4 +769,3 @@ def run_training(
             train_kwargs["cfg"] = str(hyp_path)
         training_plan["result"] = model.train(**train_kwargs).save_dir.as_posix()
     return training_plan
-
