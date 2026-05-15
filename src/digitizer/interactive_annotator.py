@@ -288,7 +288,7 @@ def interactive_annotation_session(
     output_dir: Path,
     line_width: float = 3.0,
     resize_to: tuple[int, int] | None = None,
-    update_existing: bool = False,  # deprecated — kept for backward compat, has no effect
+    update_existing: bool = False,  # Deprecated; existing annotations are always loaded automatically.
 ) -> dict[str, str]:
     """Annotate *image_path* interactively and save a training sample.
 

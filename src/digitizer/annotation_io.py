@@ -505,7 +505,9 @@ def import_annotations_from_old_format(
         if not metadata_path.exists():
             raise FileNotFoundError(
                 f"No metadata sidecar found for {source}. "
-                f"Expected {metadata_path}"
+                f"Expected {metadata_path}. "
+                "Provide a .metadata.json path or an image path with a matching "
+                "*.metadata.json sidecar."
             )
 
     try:
