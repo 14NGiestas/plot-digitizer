@@ -327,6 +327,50 @@ class DigitizerWorkflowTests(unittest.TestCase):
                         parser.parse_args(["digitize", str(image_path), "--workers", invalid_workers])
                 self.assertIn("must be >= 1", stderr.getvalue())
 
+    def test_run_ai_segmentation_resizes_mask_to_image_shape(self) -> None:
+        """Masks at model resolution must be resized to original image shape."""
+        import torch
+
+        image_h, image_w = 400, 600
+        mask_h, mask_w = 160, 160  # model resolution smaller than image
+
+        class FakeMasks:
+            def __init__(self) -> None:
+                self.data = torch.ones(1, mask_h, mask_w)  # full-confidence mask
+
+        class FakeBoxes:
+            def __init__(self) -> None:
+                self.conf = torch.tensor([0.9])
+                self.cls = torch.tensor([0.0])
+
+        class FakeResult:
+            def __init__(self) -> None:
+                self.masks = FakeMasks()
+                self.boxes = FakeBoxes()
+
+        class FakeYOLO:
+            def __init__(self, _weights: str) -> None:
+                pass
+
+            def predict(self, _image: np.ndarray, **kwargs: object) -> list[object]:
+                return [FakeResult()]
+
+        fake_ultralytics = types.SimpleNamespace(YOLO=FakeYOLO)
+        image = np.ones((image_h, image_w, 3), dtype=np.uint8) * 200
+        plot_box = digitizer.PlotBox(left=10, top=10, right=image_w - 10, bottom=image_h - 10)
+
+        with patch.dict(sys.modules, {"ultralytics": fake_ultralytics}):
+            segs = digitizer.run_ai_segmentation(
+                image=image,
+                plot_box=plot_box,
+                weights="fake.pt",
+                conf_threshold=0.25,
+            )
+
+        self.assertEqual(len(segs), 1)
+        self.assertEqual(segs[0].mask.shape, (image_h, image_w),
+                         "Mask must be resized to original image shape, not model resolution")
+
     def test_run_ai_segmentation_forwards_workers_to_predict(self) -> None:
         calls: list[dict[str, object]] = []
 
