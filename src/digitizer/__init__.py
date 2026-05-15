@@ -60,8 +60,9 @@ def _write_synthetic_example(
 ) -> None:
     """Compatibility wrapper for tests patching legacy `digitizer.*` private helpers.
 
-    New internal code should call ``digitizer.synthetic._write_synthetic_example``
-    directly instead of relying on this legacy patch-routing wrapper.
+    New internal code should call ``digitizer.synth_example._write_synthetic_example``
+    directly. This wrapper exists only to preserve existing test patch points and
+    should be removed once those callers are migrated.
     """
     _synthetic._write_synthetic_example(
         index,
@@ -172,4 +173,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser.error(f"Unsupported command: {args.command}")
     return 2
-

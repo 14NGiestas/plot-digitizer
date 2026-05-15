@@ -136,15 +136,3 @@ def run_cv_segmentation(image: np.ndarray, plot_box: PlotBox) -> list[Segmentati
             )
         )
     return results
-
-
-def _split_large_components(mask: np.ndarray) -> list[np.ndarray]:
-    labeled = measure.label(mask)
-    separated: list[np.ndarray] = []
-    for region in measure.regionprops(labeled):
-        if region.area < MIN_COMPONENT_PIXELS:
-            continue
-        component = labeled == region.label
-        separated.append(component)
-    return separated or [mask]
-
