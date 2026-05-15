@@ -26,7 +26,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .annotation_io import save_training_sample
+from .annotation_io import load_training_sample_annotations, save_training_sample
 from .constants import LOGGER
 from .image_ops import load_image
 
@@ -82,6 +82,7 @@ class _AnnotatorSession:
         image_width: int,
         image_height: int,
         line_width: float,
+        initial_annotations: list[dict[str, Any]] | None = None,
     ) -> None:
         self._image = image
         self._w = image_width
@@ -89,9 +90,15 @@ class _AnnotatorSession:
         self._line_width = line_width
         self._mode: str = "curve"
         self._current: list[tuple[float, float]] = []
-        self._committed: list[dict[str, Any]] = []
+        self._committed: list[dict[str, Any]] = list(initial_annotations or [])
         self._do_save = False
-        self._fig, self._ax = plt.subplots(figsize=(11, 7))
+        self._active_point: tuple[float, float] | None = None
+        self._zoom_half_size = max(30.0, max(self._w, self._h) * 0.075)
+        self._fig, (self._ax, self._zoom_ax) = plt.subplots(
+            ncols=2,
+            figsize=(13, 7),
+            gridspec_kw={"width_ratios": [3.2, 1.4]},
+        )
         self._fig.subplots_adjust(bottom=0.06)
         self._fig.text(0.5, 0.01, _HELP, ha="center", fontsize=8, color="dimgray")
 
@@ -165,6 +172,25 @@ class _AnnotatorSession:
         ys = [p[1] for p in self._current]
         self._ax.plot(xs, ys, "o--", color=color, alpha=0.9, markersize=8, linewidth=1.5)
 
+    def _refresh_zoom(self) -> None:
+        self._zoom_ax.clear()
+        self._zoom_ax.imshow(self._image)
+        self._zoom_ax.axis("off")
+        if self._active_point is None:
+            self._zoom_ax.set_title("Zoom (hover/click on plot)", fontsize=10)
+            return
+
+        x_coord, y_coord = self._active_point
+        x_min = max(0.0, x_coord - self._zoom_half_size)
+        x_max = min(self._w - 1, x_coord + self._zoom_half_size)
+        y_min = max(0.0, y_coord - self._zoom_half_size)
+        y_max = min(self._h - 1, y_coord + self._zoom_half_size)
+        self._zoom_ax.set_xlim(x_min, x_max)
+        self._zoom_ax.set_ylim(y_max, y_min)
+        self._zoom_ax.axvline(x_coord, color="yellow", linestyle="--", linewidth=1.0)
+        self._zoom_ax.axhline(y_coord, color="yellow", linestyle="--", linewidth=1.0)
+        self._zoom_ax.set_title(f"Zoom ({x_coord:.1f}, {y_coord:.1f})", fontsize=10)
+
     def _redraw(self) -> None:
         self._ax.clear()
         self._ax.imshow(self._image)
@@ -182,6 +208,7 @@ class _AnnotatorSession:
             f"{len(self._committed)} annotation(s) committed",
             fontsize=10,
         )
+        self._refresh_zoom()
         self._fig.canvas.draw_idle()
 
     # ------------------------------------------------------------------ events
@@ -192,13 +219,23 @@ class _AnnotatorSession:
         x, y = self._clamp(float(event.xdata), float(event.ydata))
         if event.button == 1:
             self._current.append((x, y))
+            self._active_point = (x, y)
             needed = _POINTS_NEEDED[self._mode]
             if needed is not None and len(self._current) >= needed:
                 self._commit_current()
             self._redraw()
         elif event.button == 3 and self._current:
             self._current.pop()
+            self._active_point = (x, y)
             self._redraw()
+
+    def _on_motion(self, event: Any) -> None:
+        if event.inaxes is not self._ax or event.xdata is None or event.ydata is None:
+            return
+        x, y = self._clamp(float(event.xdata), float(event.ydata))
+        self._active_point = (x, y)
+        self._refresh_zoom()
+        self._fig.canvas.draw_idle()
 
     def _on_key(self, event: Any) -> None:
         key = event.key or ""
@@ -227,7 +264,11 @@ class _AnnotatorSession:
     def run(self) -> list[dict[str, Any]]:
         """Show the annotation window; return committed annotations (empty on cancel)."""
         self._redraw()
+        manager = self._fig.canvas.manager
+        if manager is not None and hasattr(manager, "key_press_handler_id"):
+            self._fig.canvas.mpl_disconnect(manager.key_press_handler_id)
         self._fig.canvas.mpl_connect("button_press_event", self._on_click)
+        self._fig.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self._fig.canvas.mpl_connect("key_press_event", self._on_key)
         plt.show()
         return list(self._committed) if self._do_save else []
@@ -238,6 +279,7 @@ def interactive_annotation_session(
     output_dir: Path,
     line_width: float = 3.0,
     resize_to: tuple[int, int] | None = None,
+    update_existing: bool = False,
 ) -> dict[str, str]:
     """Annotate *image_path* interactively and save a training sample.
 
@@ -252,7 +294,15 @@ def interactive_annotation_session(
     import cv2
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     h, w = image_rgb.shape[:2]
-    session = _AnnotatorSession(image_rgb, w, h, line_width)
+    initial_annotations: list[dict[str, Any]] = []
+    if update_existing:
+        initial_annotations = load_training_sample_annotations(
+            image_path=image_path,
+            output_dir=output_dir,
+            target_size=(w, h),
+        )
+        LOGGER.info("Loaded %d existing annotation(s) for update mode.", len(initial_annotations))
+    session = _AnnotatorSession(image_rgb, w, h, line_width, initial_annotations=initial_annotations)
     annotations = session.run()
     if not annotations:
         LOGGER.info("Annotation session cancelled — nothing saved.")

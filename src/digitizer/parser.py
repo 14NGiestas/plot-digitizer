@@ -112,6 +112,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional output image height in pixels. Requires --resize-width.",
     )
+    annotate_parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Load existing saved annotations for this image and continue editing before saving.",
+    )
 
     return parser
 

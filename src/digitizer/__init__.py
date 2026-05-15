@@ -198,6 +198,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir=args.output_dir,
             line_width=args.line_width,
             resize_to=resize_to,
+            update_existing=args.update,
         )
         if result:
             print(json.dumps(result, indent=2))

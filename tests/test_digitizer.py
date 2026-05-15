@@ -20,6 +20,7 @@ import pandas as pd
 import digitizer
 from digitizer.annotation_io import (
     annotation_to_yolo_line,
+    load_training_sample_annotations,
     polygon_from_arrow,
     polygon_from_curve,
     polygon_from_error_bar,
@@ -803,6 +804,38 @@ class AnnotationIOTests(unittest.TestCase):
             self.assertAlmostEqual(float(scaled_pt[0]), 50.0, places=3)
             self.assertAlmostEqual(float(scaled_pt[1]), 25.0, places=3)
 
+    def test_load_training_sample_annotations_rescales_to_target_size(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "out"
+            images_dir = output_dir / "images"
+            images_dir.mkdir(parents=True, exist_ok=True)
+            metadata_path = images_dir / "plot.metadata.json"
+            metadata_path.write_text(
+                json.dumps(
+                    {
+                        "image_width": 100,
+                        "image_height": 50,
+                        "annotations": [{"type": "x_anchor", "points": [(50, 25)], "point_size": 6.0}],
+                    }
+                )
+            )
+            loaded = load_training_sample_annotations(
+                image_path=root / "plot.png",
+                output_dir=output_dir,
+                target_size=(200, 100),
+            )
+            self.assertEqual(len(loaded), 1)
+            point = loaded[0]["points"][0]
+            self.assertAlmostEqual(float(point[0]), 100.0, places=3)
+            self.assertAlmostEqual(float(point[1]), 50.0, places=3)
+
+    def test_load_training_sample_annotations_missing_metadata_returns_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            loaded = load_training_sample_annotations(root / "missing.png", root / "out", target_size=(100, 100))
+            self.assertEqual(loaded, [])
+
 
 class AnnotateParserTests(unittest.TestCase):
     """Tests for the `annotate` CLI sub-command parser."""
@@ -825,6 +858,11 @@ class AnnotateParserTests(unittest.TestCase):
         args = parser.parse_args(["annotate", "img.png", "--resize-width", "640", "--resize-height", "480"])
         self.assertEqual(args.resize_width, 640)
         self.assertEqual(args.resize_height, 480)
+
+    def test_annotate_parser_accepts_update_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["annotate", "img.png", "--update"])
+        self.assertTrue(args.update)
 
 
 if __name__ == "__main__":

@@ -315,3 +315,34 @@ def save_training_sample(
         "label_path": str(label_path),
         "metadata_path": str(metadata_path),
     }
+
+
+def load_training_sample_annotations(
+    image_path: Path,
+    output_dir: Path,
+    target_size: tuple[int, int] | None = None,
+) -> list[dict[str, Any]]:
+    """Load previously saved annotations for *image_path* from *output_dir*.
+
+    Returns an empty list when no metadata sidecar exists.
+    """
+    metadata_path = output_dir / "images" / f"{image_path.stem}.metadata.json"
+    if not metadata_path.exists():
+        return []
+
+    metadata = json.loads(metadata_path.read_text())
+    annotations = [dict(ann) for ann in metadata.get("annotations", []) if isinstance(ann, dict)]
+    if not annotations or target_size is None:
+        return annotations
+
+    stored_width = int(metadata.get("image_width", 0))
+    stored_height = int(metadata.get("image_height", 0))
+    target_width, target_height = int(target_size[0]), int(target_size[1])
+    if stored_width < 1 or stored_height < 1:
+        return annotations
+    if stored_width == target_width and stored_height == target_height:
+        return annotations
+
+    sx = target_width / float(stored_width)
+    sy = target_height / float(stored_height)
+    return [scale_annotation_points(ann, sx, sy) for ann in annotations]
