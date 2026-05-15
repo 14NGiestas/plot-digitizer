@@ -1156,13 +1156,13 @@ def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Genera
         original_hbar = _synthetic._render_hbar_mask
         original_arrow = _synthetic._render_arrow_mask
         original_error_bar = _synthetic._render_error_bar_mask
-        _synthetic._apply_degradation_filters = _apply_degradation_filters
-        _synthetic._render_curve_mask = _render_curve_mask
-        _synthetic._render_vbar_mask = _render_vbar_mask
-        _synthetic._render_hbar_mask = _render_hbar_mask
-        _synthetic._render_arrow_mask = _render_arrow_mask
-        _synthetic._render_error_bar_mask = _render_error_bar_mask
         try:
+            _synthetic._apply_degradation_filters = _apply_degradation_filters
+            _synthetic._render_curve_mask = _render_curve_mask
+            _synthetic._render_vbar_mask = _render_vbar_mask
+            _synthetic._render_hbar_mask = _render_hbar_mask
+            _synthetic._render_arrow_mask = _render_arrow_mask
+            _synthetic._render_error_bar_mask = _render_error_bar_mask
             _synthetic._write_synthetic_example(index, output_dir, rng, image_format, plot_type)
         finally:
             _synthetic._apply_degradation_filters = original_apply
