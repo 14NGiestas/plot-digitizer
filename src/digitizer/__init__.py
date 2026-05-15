@@ -61,6 +61,7 @@ from .annotation_io import (
     polygon_from_vbar,
     save_training_sample,
     scale_annotation_points,
+    import_annotations_from_old_format,
 )
 from .interactive_annotator import interactive_annotation_session
 from .validation import validate_digitization
@@ -103,9 +104,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "generate":
         generate_synthetic_dataset(
             args.output_dir, args.count, args.seed, args.image_format, args.plot_type,
-            workers=args.workers,
+            workers=args.workers, degradations=args.degradations,
         )
-        LOGGER.info("Generated %s synthetic plots (%s) in %s", args.count, args.plot_type, args.output_dir)
+        total_images = args.count * args.degradations
+        LOGGER.info(
+            "Generated %s synthetic plot(s) × %s degradation(s) = %s training image(s) (%s) in %s",
+            args.count, args.degradations, total_images, args.plot_type, args.output_dir,
+        )
         return 0
 
     if args.command == "train":
@@ -119,6 +124,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.execute,
             args.hyp_yaml,
             workers=args.workers,
+            amp=args.amp,
         )
         print(json.dumps(plan, indent=2, default=_json_default))
         return 0
@@ -205,6 +211,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(result, indent=2))
         else:
             LOGGER.info("No annotations saved.")
+        return 0
+
+    if args.command == "import-annotations":
+        out_path = import_annotations_from_old_format(args.source, args.output_dir)
+        print(json.dumps({"annotations_path": str(out_path)}, indent=2))
         return 0
 
     parser.error(f"Unsupported command: {args.command}")

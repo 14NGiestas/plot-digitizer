@@ -28,6 +28,7 @@ class SampleGenerationTask:
     child_seed: np.random.SeedSequence
     image_format: str
     plot_type: str
+    degradations: int = 1
 
 
 def _generate_one_sample(args: SampleGenerationTask) -> None:
@@ -37,7 +38,7 @@ def _generate_one_sample(args: SampleGenerationTask) -> None:
     passed through :func:`ProcessPoolExecutor.map` with explicit named fields.
     """
     rng = np.random.default_rng(args.child_seed)
-    _write_synthetic_example(args.index, args.output_dir, rng, args.image_format, args.plot_type)
+    _write_synthetic_example(args.index, args.output_dir, rng, args.image_format, args.plot_type, args.degradations)
 
 
 def generate_synthetic_dataset(
@@ -47,6 +48,7 @@ def generate_synthetic_dataset(
     image_format: str,
     plot_type: str = "mixed",
     workers: int | None = None,
+    degradations: int = 1,
 ) -> None:
     """Generate a synthetic plot dataset with YOLO segmentation labels.
 
@@ -57,7 +59,8 @@ def generate_synthetic_dataset(
 
     Args:
         output_dir: Output directory for the dataset.
-        count: Number of images to generate.
+        count: Number of **base** plots to generate.  When *degradations* > 1
+            the total number of training images is ``count × degradations``.
         seed: Random seed for reproducibility.
         image_format: Image format (``"png"`` or ``"jpg"``).
         plot_type: Type of plots to generate – ``"general"``,
@@ -66,9 +69,15 @@ def generate_synthetic_dataset(
             ``min(os.cpu_count(), count, 8)``. Pass ``1`` for strictly
             sequential execution (useful for debugging). The cap keeps
             process and memory overhead reasonable on high-core systems.
+        degradations: Number of independently degraded image variants to
+            produce per base plot.  All variants share the same YOLO labels,
+            annotations, and ground-truth CSV.  Defaults to ``1`` (current
+            behaviour: one degraded image per base plot).
     """
     if workers is not None and workers < 1:
         raise ValueError(f"workers must be >= 1, got {workers}")
+    if degradations < 1:
+        raise ValueError(f"degradations must be >= 1, got {degradations}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     for subdir in ("images", "labels", "csv", "annotations"):
@@ -93,6 +102,7 @@ def generate_synthetic_dataset(
             child_seed=sample_seeds[i],
             image_format=image_format,
             plot_type=plot_types[i],
+            degradations=degradations,
         )
         for i in range(count)
     ]

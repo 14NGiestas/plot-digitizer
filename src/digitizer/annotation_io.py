@@ -29,6 +29,8 @@ CLASS_MAPPING: dict[str, int] = {
     "y_axis": 7,
     "x_anchor": 8,
     "y_anchor": 9,
+    "x_tick_label": 10,
+    "y_tick_label": 11,
 }
 
 
@@ -238,6 +240,9 @@ def annotation_to_yolo_line(
         polygon = polygon_from_point(pts[0], point_size, image_width, image_height)
     elif ann_type == "y_anchor" and pts:
         polygon = polygon_from_point(pts[0], point_size, image_width, image_height)
+    elif ann_type in ("x_tick_label", "y_tick_label") and len(pts) >= 2:
+        # Tick labels are stored as bounding-box corners [(x0,y0),(x1,y1)].
+        polygon = polygon_from_rectangle(pts[0], pts[1], image_width, image_height)
     else:
         return None
 
@@ -469,3 +474,72 @@ def _rescale_if_needed(
     sx = target_w / float(stored_w)
     sy = target_h / float(stored_h)
     return [scale_annotation_points(ann, sx, sy) for ann in annotations]
+
+
+def import_annotations_from_old_format(
+    source: Path,
+    output_dir: Path,
+) -> Path:
+    """Import annotations from the old embedded-metadata format into the new layout.
+
+    Reads *source* (either a ``*.metadata.json`` file or an image path whose
+    metadata sidecar is discovered automatically) and writes the annotations
+    to ``output_dir/annotations/<stem>.json``.
+
+    Old format: annotations are stored in a ``annotations`` list inside the
+    metadata JSON file, with each entry having a ``"points"`` key.
+    Synthetic format: ``frame_annotations`` list inside metadata JSON.
+
+    Returns the path of the written annotations file.
+    """
+    # Resolve the metadata JSON path.
+    if source.suffix.lower() == ".json":
+        metadata_path = source
+    else:
+        # Treat as an image path; look for the sidecar.
+        metadata_path = source.parent / f"{source.stem}.metadata.json"
+        if not metadata_path.exists():
+            raise FileNotFoundError(
+                f"No metadata sidecar found for {source}. "
+                f"Expected {metadata_path}"
+            )
+
+    try:
+        metadata = json.loads(metadata_path.read_text())
+    except Exception as exc:
+        raise ValueError(f"Could not parse metadata file {metadata_path}: {exc}") from exc
+
+    # Collect annotations: prefer new-style 'annotations' with points;
+    # fall back to synthetic 'frame_annotations'.
+    raw: list[Any] = []
+    if "image_width" in metadata:
+        raw = metadata.get("annotations", [])
+    if not raw:
+        raw = metadata.get("frame_annotations", [])
+
+    annotations = _filter_annotations_with_points(raw, metadata_path)
+    if not annotations:
+        raise ValueError(
+            f"No importable annotations (with 'points' key) found in {metadata_path}"
+        )
+
+    stem = metadata_path.stem.removesuffix(".metadata")
+    ann_dir = output_dir / "annotations"
+    ann_dir.mkdir(parents=True, exist_ok=True)
+    out_path = ann_dir / f"{stem}.json"
+
+    image_w = int(metadata.get("image_width", 0))
+    image_h = int(metadata.get("image_height", 0))
+    image_ref = metadata.get("image", str(metadata_path.parent / f"{stem}.png"))
+
+    out_path.write_text(json.dumps({
+        "image": image_ref,
+        "image_width": image_w,
+        "image_height": image_h,
+        "annotations": annotations,
+        "imported_from": str(metadata_path),
+    }, indent=2))
+    LOGGER.info(
+        "Imported %d annotation(s) from %s → %s", len(annotations), metadata_path, out_path
+    )
+    return out_path
