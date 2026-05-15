@@ -105,6 +105,8 @@ Repeat similarly for stages 3 and 4 with their matching YAML files.
 - `digitizer digitize --weights model.pt` supports `.pt` or `.onnx`.
 - `digitizer digitize --x-reference "...,...\" --y-reference \"...,...\"` for known axis points.
 - `digitizer digitize --interactive-axis-selection` for GUI point picking.
+- `digitizer digitize` now requires axis bounds from references/sidecar/interactive selection (no implicit 0:1 default).
+- `digitizer digitize` is AI-only for curve extraction and fails when no curve-class masks are detected.
 - `digitizer train --workers N --execute` sets both dataloader workers and torch CPU thread pools.
 
 ## Commands summary

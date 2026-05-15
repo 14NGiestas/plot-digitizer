@@ -147,7 +147,6 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 patch("digitizer.digitize_workflow.resolve_plot_box", return_value=plot_box),
                 patch("digitizer.digitize_workflow.calibrate_axes", return_value=(calibration, {})),
                 patch("digitizer.digitize_workflow.run_ai_segmentation", return_value=[non_curve, curve]),
-                patch("digitizer.digitize_workflow.run_cv_segmentation") as mock_cv,
                 patch("digitizer.digitize_workflow.extract_curve_points", return_value=curve_points) as mock_extract,
                 patch("digitizer.digitize_workflow.build_replot_frame", return_value=replot_frame),
                 patch("digitizer.digitize_workflow.create_replot"),
@@ -169,7 +168,6 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     create_overlay_image=True,
                 )
 
-            mock_cv.assert_not_called()
             mock_extract.assert_called_once()
             self.assertEqual(mock_extract.call_args.args[0].class_id, 0)
             overlay_segmentations = mock_overlay.call_args.args[2]
@@ -178,6 +176,54 @@ class DigitizerWorkflowTests(unittest.TestCase):
             exported = pd.read_csv(result.csv_path)
             self.assertEqual(list(exported["dataset_id"].unique()), ["curve_a"])
             self.assertTrue(np.issubdtype(exported["x_real"].dtype, np.floating))
+
+    def test_digitize_image_raises_when_ai_returns_no_curve_masks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            image_path = root / "plot.png"
+            output_dir = root / "digitized"
+            image = np.zeros((10, 10, 3), dtype=np.uint8)
+            cv2.imwrite(str(image_path), image)
+            processed_gray = np.zeros((10, 10), dtype=np.uint8)
+            plot_box = digitizer.PlotBox(left=0, top=0, right=10, bottom=10)
+            calibration = digitizer.AxisCalibration(
+                x_min=0.0,
+                x_max=1.0,
+                y_min=0.0,
+                y_max=1.0,
+            )
+            non_curve = digitizer.SegmentationResult(
+                dataset_id="plot_area",
+                mask=np.ones((10, 10), dtype=bool),
+                confidence=0.95,
+                method="ai",
+                class_id=5,
+            )
+
+            with (
+                patch("digitizer.digitize_workflow.load_image", return_value=image),
+                patch("digitizer.digitize_workflow.preprocess_image", return_value=(processed_gray, {})),
+                patch("digitizer.digitize_workflow.resolve_plot_box", return_value=plot_box),
+                patch("digitizer.digitize_workflow.calibrate_axes", return_value=(calibration, {})),
+                patch("digitizer.digitize_workflow.run_ai_segmentation", return_value=[non_curve]),
+            ):
+                with self.assertRaises(RuntimeError) as exc:
+                    digitizer.digitize_image(
+                        image_path=image_path,
+                        output_dir=output_dir,
+                        x_range=None,
+                        y_range=None,
+                        x_reference=None,
+                        y_reference=None,
+                        x_scale="linear",
+                        y_scale="linear",
+                        invert_y=False,
+                        weights="best.pt",
+                        conf_threshold=0.25,
+                        create_overlay_image=False,
+                    )
+
+            self.assertIn("no curve-class masks", str(exc.exception).lower())
 
     def test_render_curve_mask_marks_curve_not_background(self) -> None:
         x_values = np.linspace(0.0, 10.0, 200)
@@ -719,6 +765,24 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertEqual(calibration.y_pixel_bottom, y_anchor_bottom)
         self.assertEqual(calibration.y_pixel_top, y_anchor_top)
         self.assertNotEqual(calibration.x_pixel_min, plot_box.left)
+
+    def test_calibrate_axes_requires_axis_bounds_when_no_inputs_available(self) -> None:
+        image_path = Path("nonexistent.png")
+        plot_box = digitizer.PlotBox(left=10, top=10, right=110, bottom=210)
+        with self.assertRaises(RuntimeError) as exc:
+            digitizer.calibrate_axes(
+                image_path=image_path,
+                plot_box=plot_box,
+                processed_gray=None,
+                x_range=None,
+                y_range=None,
+                x_reference=None,
+                y_reference=None,
+                x_scale="linear",
+                y_scale="linear",
+                invert_y=False,
+            )
+        self.assertIn("x-axis bounds", str(exc.exception).lower())
 
     def test_write_synthetic_example_draws_vbar_hbar_and_error_bar_on_main_axis(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

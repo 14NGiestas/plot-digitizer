@@ -13,7 +13,6 @@ from .ai_segmentation import run_ai_segmentation
 from .annotation_io import CLASS_MAPPING
 from .calibration import calibrate_axes
 from .constants import LOGGER
-from .cv_segmentation import run_cv_segmentation
 from .image_ops import load_image, preprocess_image, resolve_plot_box
 from .models import AxisReferencePair, DigitizeResult, SegmentationResult
 from .plotting import build_replot_frame, create_overlay, create_replot
@@ -130,10 +129,10 @@ def digitize_image(
             )
         segmentations = filtered_segmentations
     if not segmentations:
-        LOGGER.info("AI segmentation unavailable or empty for %s; using CV fallback.", image_path.name)
-        segmentations = run_cv_segmentation(image, plot_box)
-    if not segmentations:
-        raise RuntimeError(f"Unable to isolate curves in {image_path}. Try passing --x-range/--y-range or a segmentation model.")
+        raise RuntimeError(
+            f"Unable to isolate curves in {image_path}. "
+            "AI segmentation returned no curve-class masks."
+        )
 
     point_frames: list[pd.DataFrame] = []
     for segmentation in segmentations:
