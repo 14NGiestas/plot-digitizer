@@ -20,12 +20,25 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     generate_parser = subparsers.add_parser("generate", help="Generate synthetic plots and YOLO segmentation labels.")
-    generate_parser.add_argument("--output-dir", type=Path, required=True)
+    generate_parser.add_argument("--output-dir", type=Path, default=Path("train-dataset"))
     generate_parser.add_argument("--count", type=int, default=16)
     generate_parser.add_argument("--seed", type=int, default=42)
     generate_parser.add_argument("--image-format", default="png", choices=["png", "jpg"])
     generate_parser.add_argument("--plot-type", default="mixed", choices=["general", "bandstructure", "mixed"],
                                   help="Type of plots: general (standard curves), bandstructure (physics band diagrams), or mixed")
+    generate_parser.add_argument(
+        "--degradations",
+        type=_parse_positive_int,
+        default=1,
+        metavar="N",
+        help=(
+            "Number of independently degraded image variants to produce per base plot "
+            "(default: 1). When N > 1, each base plot is saved as N separate training "
+            "images with different degradation conditions, sharing the same YOLO labels, "
+            "annotations, and ground-truth CSV. Useful for augmenting a small set of "
+            "base plots: e.g. --count 100 --degradations 10 produces 1000 training images."
+        ),
+    )
     generate_parser.add_argument(
         "--workers",
         type=_parse_positive_int,
@@ -43,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--batch", type=int, default=8)
     train_parser.add_argument("--hyp-yaml", type=Path, default=None, help="Optional Ultralytics training override YAML (cfg).")
     train_parser.add_argument("--execute", action="store_true", help="Run training immediately. Otherwise, only print the plan.")
+    train_parser.add_argument(
+        "--amp",
+        action="store_true",
+        default=False,
+        help="Enable Automatic Mixed Precision (AMP) during training. Disabled by default (avoids crashes on ROCm/AMD GPUs).",
+    )
     train_parser.add_argument(
         "--workers",
         type=_parse_positive_int,
@@ -93,7 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     annotate_parser.add_argument("input", type=Path, help="Input plot image to annotate.")
     annotate_parser.add_argument(
-        "--output-dir", type=Path, default=Path("annotated-output"),
+        "--output-dir", type=Path, default=Path("train-dataset"),
         help="Directory where the training sample (image, label, metadata) is written.",
     )
     annotate_parser.add_argument(
@@ -115,7 +134,32 @@ def build_parser() -> argparse.ArgumentParser:
     annotate_parser.add_argument(
         "--update",
         action="store_true",
-        help="Load existing saved annotations for this image and continue editing before saving.",
+        help="Deprecated — existing annotations are always loaded automatically. Kept for backward compatibility.",
+    )
+
+    import_ann_parser = subparsers.add_parser(
+        "import-annotations",
+        help=(
+            "Import annotations from an old-format metadata.json into the new "
+            "annotations/ directory layout."
+        ),
+    )
+    import_ann_parser.add_argument(
+        "source",
+        type=Path,
+        help=(
+            "Path to a *.metadata.json file, or to the image whose metadata sidecar "
+            "should be discovered automatically."
+        ),
+    )
+    import_ann_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("train-dataset"),
+        help=(
+            "Dataset root directory.  The annotations file is written to "
+            "<output-dir>/annotations/<stem>.json (default: train-dataset)."
+        ),
     )
 
     return parser

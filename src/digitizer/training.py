@@ -18,6 +18,7 @@ def run_training(
     execute: bool,
     hyp_yaml: Path | None = None,
     workers: int | None = None,
+    amp: bool = False,
 ) -> dict[str, Any]:
     """Create or execute a YOLO segmentation training job."""
     dataset_yaml = (dataset_dir / "dataset.yaml").resolve()
@@ -31,6 +32,7 @@ def run_training(
         "batch": batch,
         "project": str(output_dir),
         "task": "segment",
+        "amp": amp,
     }
     hyp_path = hyp_yaml.resolve() if hyp_yaml is not None else None
     if hyp_path is not None:
@@ -89,6 +91,7 @@ def run_training(
             "batch": batch,
             "project": str(output_dir),
             "name": "synthetic_plot_digitizer",
+            "amp": amp,
         }
         if workers is not None:
             train_kwargs["workers"] = workers

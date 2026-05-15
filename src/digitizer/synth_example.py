@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ def _write_synthetic_example(
     rng: np.random.Generator,
     image_format: str,
     plot_type: str = "general",
+    degradations: int = 1,
     *,
     apply_degradation_filters_fn: Any = None,
     render_curve_mask_fn: Any = None,
@@ -31,7 +33,18 @@ def _write_synthetic_example(
     render_arrow_mask_fn: Any = None,
     render_error_bar_mask_fn: Any = None,
 ) -> None:
-    """Generate a synthetic plot with support for bandstructures and complex annotations."""
+    """Generate a synthetic plot with support for bandstructures and complex annotations.
+
+    When *degradations* > 1, the same base plot is saved as *degradations* separate
+    images under different random degradation conditions.  The YOLO label file,
+    annotations file, and ground-truth CSV are written once per base plot and shared
+    across all degraded variants (since geometry is unchanged by degradation).
+
+    Degraded variants are named ``plot_{index:04d}_deg{j:02d}.{ext}`` for
+    ``j`` in ``range(degradations)``.  When *degradations* == 1 (the default) the
+    variant suffix is omitted and the file is named ``plot_{index:04d}.{ext}``,
+    preserving backward compatibility.
+    """
     apply_degradation_filters_fn = apply_degradation_filters_fn or _apply_degradation_filters
     render_curve_mask_fn = render_curve_mask_fn or _render_curve_mask
     render_vbar_mask_fn = render_vbar_mask_fn or _render_vbar_mask
@@ -41,10 +54,21 @@ def _write_synthetic_example(
 
     fig_size = (6.0, 4.2)
     dpi = DEFAULT_DPI
-    image_path = output_dir / "images" / f"plot_{index:04d}.{image_format}"
-    label_path = output_dir / "labels" / f"plot_{index:04d}.txt"
-    metadata_path = output_dir / "images" / f"plot_{index:04d}.metadata.json"
-    ground_truth_path = output_dir / "ground_truth" / f"plot_{index:04d}.csv"
+    # Base paths (used for labels, annotations, csv, and metadata).
+    base_stem = f"plot_{index:04d}"
+    label_path = output_dir / "labels" / f"{base_stem}.txt"
+    metadata_path = output_dir / "images" / f"{base_stem}.metadata.json"
+    annotations_path = output_dir / "annotations" / f"{base_stem}.json"
+    csv_path = output_dir / "csv" / f"{base_stem}.csv"
+    # When degradations == 1 keep old single-file naming; otherwise write a
+    # clean base image temporarily and copy+degrade into variant files.
+    single_mode = degradations == 1
+    if single_mode:
+        image_path = output_dir / "images" / f"{base_stem}.{image_format}"
+    else:
+        # Write the clean matplotlib figure to a temp file first.
+        image_path = output_dir / "images" / f"{base_stem}_clean.{image_format}"
+
     use_log_x = bool(rng.random() < LOG_X_PROBABILITY)
     x_range = ((LOG_X_MIN if use_log_x else 0.0), float(rng.uniform(6.0, 12.0)))
     x_values = np.geomspace(*x_range, 480) if use_log_x else np.linspace(*x_range, 480)
@@ -83,7 +107,8 @@ def _write_synthetic_example(
         image_format,
         label_path,
         metadata_path,
-        ground_truth_path,
+        annotations_path,
+        csv_path,
         x_range,
         y_range,
         use_log_x,
@@ -94,4 +119,29 @@ def _write_synthetic_example(
         annotation_descriptors,
     )
     plt.close(fig)
-    apply_degradation_filters_fn(image_path, rng)
+
+    if single_mode:
+        # Classic single-image mode: degrade in-place.
+        apply_degradation_filters_fn(image_path, rng)
+    else:
+        # Multi-degradation mode: produce N independently degraded copies of the
+        # clean base image.  Each copy gets its own degradation rng derived from
+        # the parent so the sequence is fully deterministic.
+        deg_seeds = rng.integers(0, 2**31, size=degradations)
+        variant_images: list[Path] = []
+        variant_labels: list[Path] = []
+        for j in range(degradations):
+            variant_stem = f"{base_stem}_deg{j:02d}"
+            variant_image = output_dir / "images" / f"{variant_stem}.{image_format}"
+            variant_label = output_dir / "labels" / f"{variant_stem}.txt"
+            shutil.copy2(image_path, variant_image)
+            # Copy label file so every image→label pair is self-contained.
+            shutil.copy2(label_path, variant_label)
+            deg_rng = np.random.default_rng(int(deg_seeds[j]))
+            apply_degradation_filters_fn(variant_image, deg_rng)
+            variant_images.append(variant_image)
+            variant_labels.append(variant_label)
+        # Remove the clean base image and base label — they were only needed
+        # as copy sources; the variant files are the canonical training samples.
+        image_path.unlink(missing_ok=True)
+        label_path.unlink(missing_ok=True)

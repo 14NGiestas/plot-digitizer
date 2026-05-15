@@ -20,6 +20,7 @@ axis elements) directly on top of a real plot image. Keyboard shortcuts:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -130,7 +131,7 @@ class _AnnotatorSession:
     def _draw_annotation(self, ann: dict[str, Any], alpha: float = 0.75) -> None:
         t = ann["type"]
         color = _MODE_COLORS[t]
-        pts = ann["points"]
+        pts = ann.get("points", [])
         lw = 2.0
         if t == "vbar" and pts:
             self._ax.axvline(pts[0][0], color=color, alpha=alpha, linewidth=lw)
@@ -169,6 +170,8 @@ class _AnnotatorSession:
             ys = [p[1] for p in pts]
             self._ax.plot(xs, ys, color=color, alpha=alpha, linewidth=lw)
             self._ax.plot(xs, ys, "o", color=color, alpha=alpha, markersize=5)
+        elif not pts:
+            LOGGER.debug("Skipping annotation of type %r with no points in display", t)
 
     def _draw_current(self) -> None:
         if not self._current:
@@ -285,13 +288,23 @@ def interactive_annotation_session(
     output_dir: Path,
     line_width: float = 3.0,
     resize_to: tuple[int, int] | None = None,
-    update_existing: bool = False,
+    update_existing: bool = False,  # Deprecated; existing annotations are always loaded automatically.
 ) -> dict[str, str]:
     """Annotate *image_path* interactively and save a training sample.
 
     Opens a matplotlib window for the user to draw vbars, hbars, arrows,
-    curves, and error bars.  On save (Enter), writes the image copy, YOLO
-    label file, and metadata sidecar to *output_dir*.
+    curves, and error bars.  Existing annotations for the image are loaded
+    automatically — from ``output_dir/annotations/<stem>.json`` if present,
+    otherwise from a sibling ``annotations/`` directory or an older metadata
+    sidecar — so the session always resumes from the last saved state.
+
+    On save (Enter), writes the image copy, YOLO label file, annotations file,
+    and metadata sidecar to *output_dir*.
+
+    Args:
+        update_existing: **Deprecated.** Existing annotations are always
+            loaded automatically; this argument has no effect and is retained
+            only for backward compatibility with older call sites.
 
     Returns the paths dict from :func:`~digitizer.annotation_io.save_training_sample`,
     or an empty dict when the user cancels.
@@ -300,14 +313,21 @@ def interactive_annotation_session(
     import cv2
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     h, w = image_rgb.shape[:2]
-    initial_annotations: list[dict[str, Any]] = []
-    if update_existing:
-        initial_annotations = load_training_sample_annotations(
-            image_path=image_path,
-            output_dir=output_dir,
-            target_size=(w, h),
-        )
-        LOGGER.info("Loaded %d existing annotation(s) for update mode.", len(initial_annotations))
+
+    # Always try to load existing annotations so the session resumes from the
+    # last saved state regardless of whether --update was passed.
+    initial_annotations = load_training_sample_annotations(
+        image_path=image_path,
+        output_dir=output_dir,
+        target_size=(w, h),
+    )
+    if initial_annotations:
+        LOGGER.info("Loaded %d existing annotation(s).", len(initial_annotations))
+
+    # Auto-detect an associated CSV (ground truth or digitized data) to
+    # preserve alongside the new annotations in output_dir/csv/.
+    csv_src: Path | None = _find_associated_csv(image_path, output_dir)
+
     session = _AnnotatorSession(image_rgb, w, h, line_width, initial_annotations=initial_annotations)
     annotations = session.run()
     if not annotations:
@@ -319,8 +339,51 @@ def interactive_annotation_session(
         output_dir=output_dir,
         default_line_width=line_width,
         resize_to=resize_to,
+        csv_path=csv_src,
     )
     LOGGER.info(
         "Saved %d annotation(s) → %s", len(annotations), result["label_path"]
     )
     return result
+
+
+def _find_associated_csv(image_path: Path, output_dir: Path) -> Path | None:
+    """Return an associated CSV file for *image_path*, or ``None`` if not found.
+
+    Search order:
+    1. ``csv_path`` / ``ground_truth_csv`` recorded in any nearby metadata sidecar.
+    2. Conventional ``csv/`` sibling directory of *output_dir*.
+    3. Conventional ``csv/`` sibling directory one level above *image_path*.
+    """
+    stem = image_path.stem
+
+    # 1. Read metadata sidecars (output_dir primary, then image sibling).
+    for meta_candidate in (
+        output_dir / "images" / f"{stem}.metadata.json",
+        image_path.parent / f"{stem}.metadata.json",
+    ):
+        if not meta_candidate.exists():
+            continue
+        try:
+            meta = json.loads(meta_candidate.read_text())
+        except Exception:
+            continue
+        for key in ("csv_path", "ground_truth_csv"):
+            ref = meta.get(key)
+            if ref:
+                p = Path(ref)
+                if p.exists():
+                    return p
+        break  # only inspect the first found sidecar
+
+    # 2. output_dir/csv/<stem>.csv
+    candidate = output_dir / "csv" / f"{stem}.csv"
+    if candidate.exists():
+        return candidate
+
+    # 3. <image_parent>/../csv/<stem>.csv  (handles images inside images/ subdir)
+    candidate = image_path.parent.parent / "csv" / f"{stem}.csv"
+    if candidate.exists():
+        return candidate
+
+    return None

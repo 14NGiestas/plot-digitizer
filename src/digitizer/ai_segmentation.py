@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import cv2
 import numpy as np
 
 from .constants import LOGGER, MIN_COMPONENT_PIXELS
@@ -36,19 +37,25 @@ def run_ai_segmentation(
     masks = getattr(predictions[0], "masks", None)
     if masks is None or masks.data is None:
         return results
+    img_h, img_w = image.shape[:2]
     for index, mask_tensor in enumerate(masks.data):
-        mask = (mask_tensor.cpu().numpy() > 0.5).astype(np.uint8)
+        mask_np = mask_tensor.cpu().numpy()
+        if mask_np.shape != (img_h, img_w):
+            mask_np = cv2.resize(mask_np, (img_w, img_h), interpolation=cv2.INTER_LINEAR)
+        mask = (mask_np > 0.5).astype(np.uint8)
         cropped = np.zeros_like(mask)
         cropped[plot_box.top : plot_box.bottom, plot_box.left : plot_box.right] = mask[plot_box.top : plot_box.bottom, plot_box.left : plot_box.right]
         if cropped.sum() < MIN_COMPONENT_PIXELS:
             continue
         confidence = float(predictions[0].boxes.conf[index].cpu().item()) if predictions[0].boxes is not None else conf_threshold
+        class_id = int(predictions[0].boxes.cls[index].cpu().item()) if predictions[0].boxes is not None else None
         results.append(
             SegmentationResult(
                 dataset_id=f"dataset_{index}",
                 mask=cropped.astype(bool),
                 confidence=confidence,
                 method="ai",
+                class_id=class_id,
             )
         )
     return results

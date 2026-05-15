@@ -52,7 +52,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 plot_type="general",
             )
             image_path = next((dataset_dir / "images").glob("*.png"))
-            truth_csv = next((dataset_dir / "ground_truth").glob("*.csv"))
+            truth_csv = next((dataset_dir / "csv").glob("*.csv"))
 
             result = digitizer.digitize_image(
                 image_path=image_path,
@@ -93,6 +93,9 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertIn("exports", metadata)
             self.assertEqual(metadata["exports"]["replot_csv"], str(result.replot_csv_path))
             self.assertEqual(metadata["exports"]["replot_image"], str(result.replot_path))
+            self.assertEqual(metadata["exports"]["csv"], str(result.csv_path))
+            self.assertIsNotNone(result.label_path)
+            self.assertTrue(result.label_path.exists())
             method_counts_are_ints = all(isinstance(value, int) for value in metadata["segmentation"]["method_counts"].values())
             self.assertTrue(method_counts_are_ints)
 
@@ -263,7 +266,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 par_dir, count=4, seed=99, image_format="png", plot_type="mixed", workers=2
             )
 
-            for subdir in ("images", "labels", "ground_truth"):
+            for subdir in ("images", "labels", "csv"):
                 seq_files = sorted(f.name for f in (seq_dir / subdir).iterdir())
                 par_files = sorted(f.name for f in (par_dir / subdir).iterdir())
                 self.assertEqual(seq_files, par_files, f"File list mismatch in {subdir}/")
@@ -323,6 +326,61 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     with self.assertRaises(SystemExit):
                         parser.parse_args(["digitize", str(image_path), "--workers", invalid_workers])
                 self.assertIn("must be >= 1", stderr.getvalue())
+
+    def test_run_ai_segmentation_resizes_mask_to_image_shape(self) -> None:
+        """Masks at model resolution must be resized to original image shape."""
+        image_h, image_w = 400, 600
+        mask_h, mask_w = 160, 160  # model resolution smaller than image
+
+        class FakeTensor:
+            def __init__(self, arr: np.ndarray) -> None:
+                self._arr = arr
+
+            def cpu(self) -> "FakeTensor":
+                return self
+
+            def numpy(self) -> np.ndarray:
+                return self._arr
+
+            def item(self) -> float:
+                return float(self._arr.flat[0])
+
+        class FakeMasks:
+            def __init__(self) -> None:
+                self.data = [FakeTensor(np.ones((mask_h, mask_w), dtype=np.float32))]
+
+        class FakeBoxes:
+            def __init__(self) -> None:
+                self.conf = [FakeTensor(np.array(0.9))]
+                self.cls = [FakeTensor(np.array(0.0))]
+
+        class FakeResult:
+            def __init__(self) -> None:
+                self.masks = FakeMasks()
+                self.boxes = FakeBoxes()
+
+        class FakeYOLO:
+            def __init__(self, weights: str) -> None:
+                pass
+
+            def predict(self, _image: np.ndarray, **kwargs: object) -> list[object]:
+                return [FakeResult()]
+
+        fake_ultralytics = types.SimpleNamespace(YOLO=FakeYOLO)
+        image = np.ones((image_h, image_w, 3), dtype=np.uint8) * 200
+        plot_box = digitizer.PlotBox(left=10, top=10, right=image_w - 10, bottom=image_h - 10)
+
+        with patch.dict(sys.modules, {"ultralytics": fake_ultralytics}):
+            segs = digitizer.run_ai_segmentation(
+                image=image,
+                plot_box=plot_box,
+                weights="fake.pt",
+                conf_threshold=0.25,
+            )
+
+        self.assertEqual(len(segs), 1)
+        self.assertEqual(segs[0].mask.shape, (image_h, image_w),
+                         "Mask must be resized to original image shape, not model resolution")
 
     def test_run_ai_segmentation_forwards_workers_to_predict(self) -> None:
         calls: list[dict[str, object]] = []
@@ -504,6 +562,9 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertEqual(calls["num_interop_threads"], 16)
             self.assertEqual(calls["train_kwargs"]["workers"], 16)
             self.assertEqual(plan["workers"], 16)
+            # amp defaults to False
+            self.assertFalse(calls["train_kwargs"]["amp"])
+            self.assertFalse(plan["amp"])
 
     def test_calibrate_axes_uses_reference_points_for_non_extreme_axis_points(self) -> None:
         image_path = Path("nonexistent.png")
@@ -582,7 +643,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
     def test_write_synthetic_example_draws_vbar_hbar_and_error_bar_on_main_axis(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for subdir in ("images", "labels", "ground_truth"):
+            for subdir in ("images", "labels", "csv", "annotations"):
                 (root / subdir).mkdir()
             rng = np.random.default_rng(7)
             solid_mask = np.zeros((120, 120), dtype=bool)
@@ -769,6 +830,7 @@ class AnnotationIOTests(unittest.TestCase):
             self.assertTrue(Path(result["image_path"]).exists())
             self.assertTrue(Path(result["label_path"]).exists())
             self.assertTrue(Path(result["metadata_path"]).exists())
+            self.assertTrue(Path(result["annotations_path"]).exists())
 
             label_text = Path(result["label_path"]).read_text()
             lines = [l for l in label_text.splitlines() if l.strip()]
@@ -784,6 +846,12 @@ class AnnotationIOTests(unittest.TestCase):
             self.assertEqual(metadata["image_width"], 100)
             self.assertEqual(metadata["image_height"], 100)
             self.assertEqual(metadata["label_count"], 3)
+            self.assertNotIn("annotations", metadata)
+            self.assertIn("annotations_path", metadata)
+
+            ann_data = json.loads(Path(result["annotations_path"]).read_text())
+            self.assertEqual(len(ann_data["annotations"]), 3)
+            self.assertEqual(ann_data["image_width"], 100)
 
     def test_save_training_sample_resize_scales_annotations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -800,11 +868,40 @@ class AnnotationIOTests(unittest.TestCase):
             self.assertEqual(metadata["source_image_height"], 100)
             self.assertEqual(metadata["image_width"], 100)
             self.assertEqual(metadata["image_height"], 50)
-            scaled_pt = metadata["annotations"][0]["points"][0]
+
+            ann_data = json.loads(Path(result["annotations_path"]).read_text())
+            scaled_pt = ann_data["annotations"][0]["points"][0]
             self.assertAlmostEqual(float(scaled_pt[0]), 50.0, places=3)
             self.assertAlmostEqual(float(scaled_pt[1]), 25.0, places=3)
 
     def test_load_training_sample_annotations_rescales_to_target_size(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "out"
+            ann_dir = output_dir / "annotations"
+            ann_dir.mkdir(parents=True, exist_ok=True)
+            ann_path = ann_dir / "plot.json"
+            ann_path.write_text(
+                json.dumps(
+                    {
+                        "image_width": 100,
+                        "image_height": 50,
+                        "annotations": [{"type": "x_anchor", "points": [(50, 25)], "point_size": 6.0}],
+                    }
+                )
+            )
+            loaded = load_training_sample_annotations(
+                image_path=root / "plot.png",
+                output_dir=output_dir,
+                target_size=(200, 100),
+            )
+            self.assertEqual(len(loaded), 1)
+            point = loaded[0]["points"][0]
+            self.assertAlmostEqual(float(point[0]), 100.0, places=3)
+            self.assertAlmostEqual(float(point[1]), 50.0, places=3)
+
+    def test_load_training_sample_annotations_legacy_metadata_fallback(self) -> None:
+        """Metadata with embedded annotations is still readable (backward compat)."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             output_dir = root / "out"
@@ -863,6 +960,273 @@ class AnnotateParserTests(unittest.TestCase):
         parser = build_parser()
         args = parser.parse_args(["annotate", "img.png", "--update"])
         self.assertTrue(args.update)
+
+
+class GenerateDegradationsTests(unittest.TestCase):
+    """Tests for multi-degradation variant generation."""
+
+    def test_multi_degradation_produces_N_images_per_base_plot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            solid_mask = np.zeros((120, 120), dtype=bool)
+            solid_mask[20:100, 30:90] = True
+            with (
+                patch("digitizer._apply_degradation_filters", return_value=None),
+                patch("digitizer._render_curve_mask", return_value=solid_mask),
+                patch("digitizer._render_vbar_mask", return_value=solid_mask),
+                patch("digitizer._render_hbar_mask", return_value=solid_mask),
+                patch("digitizer._render_arrow_mask", return_value=solid_mask),
+                patch("digitizer._render_error_bar_mask", return_value=solid_mask),
+            ):
+                digitizer.generate_synthetic_dataset(
+                    root / "out", count=2, seed=7, image_format="png",
+                    plot_type="general", workers=1, degradations=3,
+                )
+
+            images = sorted((root / "out" / "images").glob("*.png"))
+            labels = sorted((root / "out" / "labels").glob("*.txt"))
+            # 2 base plots × 3 degradations = 6 images, 6 label files
+            self.assertEqual(len(images), 6)
+            self.assertEqual(len(labels), 6)
+            # Variant naming: plot_0000_deg00, plot_0000_deg01, plot_0000_deg02 ...
+            stems = {p.stem for p in images}
+            self.assertIn("plot_0000_deg00", stems)
+            self.assertIn("plot_0000_deg02", stems)
+            self.assertIn("plot_0001_deg00", stems)
+            # Base clean image should NOT be present
+            self.assertNotIn("plot_0000", stems)
+            # Base label file should also be removed
+            self.assertFalse((root / "out" / "labels" / "plot_0000.txt").exists())
+            # Shared files: 2 annotations + 2 csv (one per base plot)
+            ann_files = list((root / "out" / "annotations").glob("*.json"))
+            csv_files = list((root / "out" / "csv").glob("*.csv"))
+            self.assertEqual(len(ann_files), 2)
+            self.assertEqual(len(csv_files), 2)
+
+    def test_single_degradation_preserves_old_naming(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            solid_mask = np.zeros((120, 120), dtype=bool)
+            solid_mask[20:100, 30:90] = True
+            with (
+                patch("digitizer._apply_degradation_filters", return_value=None),
+                patch("digitizer._render_curve_mask", return_value=solid_mask),
+                patch("digitizer._render_vbar_mask", return_value=solid_mask),
+                patch("digitizer._render_hbar_mask", return_value=solid_mask),
+                patch("digitizer._render_arrow_mask", return_value=solid_mask),
+                patch("digitizer._render_error_bar_mask", return_value=solid_mask),
+            ):
+                digitizer.generate_synthetic_dataset(
+                    root / "out", count=2, seed=7, image_format="png",
+                    plot_type="general", workers=1, degradations=1,
+                )
+            images = sorted((root / "out" / "images").glob("*.png"))
+            # degradations=1: 2 images, no _deg suffix
+            stems = {p.stem for p in images}
+            self.assertIn("plot_0000", stems)
+            self.assertIn("plot_0001", stems)
+            # No _deg suffix files
+            self.assertFalse(any("_deg" in s for s in stems))
+
+    def test_generate_parser_rejects_non_positive_degradations(self) -> None:
+        parser = build_parser()
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["generate", "--degradations", "0"])
+
+    def test_generate_parser_accepts_degradations_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["generate", "--degradations", "5"])
+        self.assertEqual(args.degradations, 5)
+
+
+class TrainingAmpTests(unittest.TestCase):
+    """Tests for amp=False default in training."""
+
+    def test_train_parser_amp_defaults_to_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["train", "--dataset-dir", "/tmp/ds"])
+        self.assertFalse(args.amp)
+
+    def test_train_parser_accepts_amp_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["train", "--dataset-dir", "/tmp/ds", "--amp"])
+        self.assertTrue(args.amp)
+
+    def test_run_training_plan_includes_amp_false_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_dir = Path(tmp) / "ds"
+            digitizer.generate_synthetic_dataset(
+                dataset_dir, count=1, seed=1, image_format="png", plot_type="general",
+            )
+            plan = digitizer.run_training(
+                dataset_dir=dataset_dir,
+                output_dir=Path(tmp) / "runs",
+                epochs=1, imgsz=320, weights="yolov8n-seg.pt", batch=1, execute=False,
+            )
+            self.assertFalse(plan["amp"])
+
+    def test_run_training_plan_includes_amp_true_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_dir = Path(tmp) / "ds"
+            digitizer.generate_synthetic_dataset(
+                dataset_dir, count=1, seed=1, image_format="png", plot_type="general",
+            )
+            plan = digitizer.run_training(
+                dataset_dir=dataset_dir,
+                output_dir=Path(tmp) / "runs",
+                epochs=1, imgsz=320, weights="yolov8n-seg.pt", batch=1, execute=False,
+                amp=True,
+            )
+            self.assertTrue(plan["amp"])
+
+
+class TickLabelAnnotationTests(unittest.TestCase):
+    """Tests for tick-label annotation extraction during synthetic generation."""
+
+    def test_generated_annotations_include_tick_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            solid_mask = np.zeros((120, 120), dtype=bool)
+            solid_mask[20:100, 30:90] = True
+            with (
+                patch("digitizer._apply_degradation_filters", return_value=None),
+                patch("digitizer._render_curve_mask", return_value=solid_mask),
+                patch("digitizer._render_vbar_mask", return_value=solid_mask),
+                patch("digitizer._render_hbar_mask", return_value=solid_mask),
+                patch("digitizer._render_arrow_mask", return_value=solid_mask),
+                patch("digitizer._render_error_bar_mask", return_value=solid_mask),
+            ):
+                digitizer.generate_synthetic_dataset(
+                    root / "out", count=1, seed=42, image_format="png",
+                    plot_type="general", workers=1,
+                )
+            ann_path = root / "out" / "annotations" / "plot_0000.json"
+            self.assertTrue(ann_path.exists())
+            ann_data = json.loads(ann_path.read_text())
+            types_found = {a["type"] for a in ann_data["annotations"]}
+            self.assertIn("x_tick_label", types_found)
+            self.assertIn("y_tick_label", types_found)
+            # Every tick label must have a non-empty text value
+            for ann in ann_data["annotations"]:
+                if ann["type"] in ("x_tick_label", "y_tick_label"):
+                    self.assertIn("text", ann)
+                    self.assertTrue(ann["text"].strip())
+
+    def test_tick_labels_appear_in_yolo_label_file(self) -> None:
+        from digitizer.annotation_io import CLASS_MAPPING
+        x_tick_class = CLASS_MAPPING["x_tick_label"]
+        y_tick_class = CLASS_MAPPING["y_tick_label"]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            solid_mask = np.zeros((120, 120), dtype=bool)
+            solid_mask[20:100, 30:90] = True
+            with (
+                patch("digitizer._apply_degradation_filters", return_value=None),
+                patch("digitizer._render_curve_mask", return_value=solid_mask),
+                patch("digitizer._render_vbar_mask", return_value=solid_mask),
+                patch("digitizer._render_hbar_mask", return_value=solid_mask),
+                patch("digitizer._render_arrow_mask", return_value=solid_mask),
+                patch("digitizer._render_error_bar_mask", return_value=solid_mask),
+            ):
+                digitizer.generate_synthetic_dataset(
+                    root / "out", count=1, seed=42, image_format="png",
+                    plot_type="general", workers=1,
+                )
+            label_text = (root / "out" / "labels" / "plot_0000.txt").read_text()
+            classes_in_labels = {int(line.split()[0]) for line in label_text.splitlines() if line.strip()}
+            self.assertIn(x_tick_class, classes_in_labels)
+            self.assertIn(y_tick_class, classes_in_labels)
+
+
+class ImportAnnotationsTests(unittest.TestCase):
+    """Tests for import-annotations subcommand."""
+
+    def test_import_from_old_metadata_json(self) -> None:
+        from digitizer.annotation_io import import_annotations_from_old_format
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            metadata_path = root / "plot_0000.metadata.json"
+            metadata_path.write_text(json.dumps({
+                "image": str(root / "plot_0000.png"),
+                "image_width": 100,
+                "image_height": 80,
+                "annotations": [
+                    {"type": "x_anchor", "points": [(20, 60)], "point_size": 6.0},
+                    {"type": "vbar", "points": [(50, 0)]},
+                ],
+            }))
+            out = import_annotations_from_old_format(metadata_path, root / "train-dataset")
+            self.assertTrue(out.exists())
+            data = json.loads(out.read_text())
+            self.assertEqual(len(data["annotations"]), 2)
+            self.assertEqual(data["image_width"], 100)
+            self.assertEqual(data["image_height"], 80)
+            self.assertIn("imported_from", data)
+
+    def test_import_skips_annotations_without_points(self) -> None:
+        from digitizer.annotation_io import import_annotations_from_old_format
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            metadata_path = root / "plot.metadata.json"
+            metadata_path.write_text(json.dumps({
+                "image_width": 100,
+                "image_height": 80,
+                "annotations": [
+                    {"type": "vbar", "x_pos": 0.5},          # old descriptor, no points
+                    {"type": "x_anchor", "points": [(50, 70)]},  # valid
+                ],
+            }))
+            out = import_annotations_from_old_format(metadata_path, root / "out")
+            data = json.loads(out.read_text())
+            # Only the annotation with points should be imported
+            self.assertEqual(len(data["annotations"]), 1)
+            self.assertEqual(data["annotations"][0]["type"], "x_anchor")
+
+    def test_import_raises_when_no_annotations_found(self) -> None:
+        from digitizer.annotation_io import import_annotations_from_old_format
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            metadata_path = root / "empty.metadata.json"
+            metadata_path.write_text(json.dumps({"image_width": 100, "image_height": 80}))
+            with self.assertRaises(ValueError):
+                import_annotations_from_old_format(metadata_path, root / "out")
+
+    def test_import_annotations_cli_subcommand(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            metadata_path = root / "plot.metadata.json"
+            metadata_path.write_text(json.dumps({
+                "image_width": 50, "image_height": 40,
+                "annotations": [{"type": "vbar", "points": [(25, 0)]}],
+            }))
+            parser = build_parser()
+            args = parser.parse_args([
+                "import-annotations", str(metadata_path),
+                "--output-dir", str(root / "train-dataset"),
+            ])
+            self.assertEqual(args.command, "import-annotations")
+            self.assertEqual(args.source, metadata_path)
+
+    def test_import_annotations_main_missing_metadata_sidecar_reports_cli_error(self) -> None:
+        missing_source = "nonexistent_input_image.png"
+        err = io.StringIO()
+        with redirect_stderr(err):
+            with self.assertRaises(SystemExit) as ctx:
+                digitizer.main(["import-annotations", missing_source])
+        self.assertEqual(ctx.exception.code, 2)
+        stderr = err.getvalue()
+        self.assertIn(f"No metadata sidecar found for {missing_source}", stderr)
+        self.assertIn("Provide a .metadata.json path", stderr)
+
+    def test_import_annotations_main_missing_metadata_json_reports_cli_error(self) -> None:
+        missing_metadata = "nonexistent_plot.metadata.json"
+        err = io.StringIO()
+        with redirect_stderr(err):
+            with self.assertRaises(SystemExit) as ctx:
+                digitizer.main(["import-annotations", missing_metadata])
+        self.assertEqual(ctx.exception.code, 2)
+        stderr = err.getvalue()
+        self.assertIn(f"Could not parse metadata file {missing_metadata}", stderr)
 
 
 if __name__ == "__main__":
