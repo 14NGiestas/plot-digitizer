@@ -125,6 +125,16 @@
             python -m venv --system-site-packages "$_ai_venv"
             "$_ai_venv/bin/pip" install --quiet torch torchvision \
               --index-url ${torchIndexUrl}
+            # Nix withPackages creates a wrapped Python whose packages are injected via
+            # .pth files in the wrapper's merged site-packages directory.  A venv built
+            # from this Python resolves the symlink to the base interpreter and records
+            # that base directory in pyvenv.cfg, so --system-site-packages misses all
+            # .pth-injected Nix packages (numpy, pandas, cv2, …).  Writing a .pth file
+            # into the venv's own site-packages exposes those Nix store paths at Python
+            # startup, regardless of any PYTHONPATH override in the calling command.
+            _venv_sp="$("$_ai_venv/bin/python" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
+            python -c 'import sys,os; print("\n".join(p for p in sys.path if p and os.path.isdir(p) and "/nix/store" in p))' \
+              > "$_venv_sp/nix-packages.pth"
             echo "torch/torchvision installed into ''${_ai_venv}."
           fi
           . "$_ai_venv/bin/activate"
