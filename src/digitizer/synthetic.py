@@ -584,8 +584,8 @@ class SampleGenerationTask:
 def _generate_one_sample(args: SampleGenerationTask) -> None:
     """Worker function for parallel synthetic sample generation.
 
-    Accepts a tuple so it can be passed through :func:`ProcessPoolExecutor.map`
-    without requiring Python 3.12+ keyword-argument pickling.
+    Accepts a :class:`SampleGenerationTask` dataclass instance so it can be
+    passed through :func:`ProcessPoolExecutor.map` with explicit named fields.
     """
     rng = np.random.default_rng(args.child_seed)
     _write_synthetic_example(args.index, args.output_dir, rng, args.image_format, args.plot_type)

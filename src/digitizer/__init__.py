@@ -1144,7 +1144,11 @@ from .synthetic import (
 )
 
 def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Generator, image_format: str, plot_type: str = "general") -> None:
-    """Compatibility wrapper for tests that patch private synthetic helpers on this module."""
+    """Compatibility wrapper for tests patching legacy `digitizer.*` private helpers.
+
+    New internal code should call ``digitizer.synthetic._write_synthetic_example``
+    directly instead of relying on this legacy patch-routing wrapper.
+    """
     _synthetic._write_synthetic_example(
         index,
         output_dir,
