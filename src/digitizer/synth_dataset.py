@@ -15,7 +15,7 @@ from .synth_example import _write_synthetic_example
 
 @dataclass(frozen=True, slots=True)
 class SampleGenerationTask:
-    """Parameters for generating one synthetic sample."""
+    """Container for one synthetic sample's parallel generation parameters."""
 
     index: int
     output_dir: Path

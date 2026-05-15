@@ -45,9 +45,9 @@ def _apply_degradation_filters(image_path: Path, rng: np.random.Generator) -> No
         salt_pepper_prob = rng.uniform(0.005, 0.02)
         salt_mask = rng.random(degraded.shape[:2]) < salt_pepper_prob
         pepper_mask = rng.random(degraded.shape[:2]) < salt_pepper_prob
-        for channel in range(3):
-            degraded[salt_mask, channel] = 255
-            degraded[pepper_mask, channel] = 0
+        for color_channel in range(3):
+            degraded[salt_mask, color_channel] = 255
+            degraded[pepper_mask, color_channel] = 0
     if apply_bw:
         gray = cv2.cvtColor(degraded, cv2.COLOR_BGR2GRAY)
         if rng.random() > 0.5:
