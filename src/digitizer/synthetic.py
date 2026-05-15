@@ -50,6 +50,7 @@ LOG_X_MIN = 0.1
 
 
 def _norm_to_scale(values: np.ndarray, minimum: float, maximum: float, scale: str) -> np.ndarray:
+    """Map normalized values in [0, 1] to real values using a linear or log scale."""
     if scale == "log":
         if minimum <= 0 or maximum <= 0:
             raise ValueError("Logarithmic axes require positive bounds.")
@@ -736,5 +737,4 @@ def run_training(
             train_kwargs["cfg"] = str(hyp_path)
         training_plan["result"] = model.train(**train_kwargs).save_dir.as_posix()
     return training_plan
-
 

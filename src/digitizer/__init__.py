@@ -24,6 +24,7 @@ import math
 import multiprocessing
 import os
 import sys
+import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -1143,16 +1144,33 @@ from .synthetic import (
     run_training,
 )
 
+_SYNTHETIC_PATCH_LOCK = threading.Lock()
+
 
 def _write_synthetic_example(index: int, output_dir: Path, rng: np.random.Generator, image_format: str, plot_type: str = "general") -> None:
     """Compatibility wrapper for tests that patch private synthetic helpers on this module."""
-    _synthetic._apply_degradation_filters = _apply_degradation_filters
-    _synthetic._render_curve_mask = _render_curve_mask
-    _synthetic._render_vbar_mask = _render_vbar_mask
-    _synthetic._render_hbar_mask = _render_hbar_mask
-    _synthetic._render_arrow_mask = _render_arrow_mask
-    _synthetic._render_error_bar_mask = _render_error_bar_mask
-    _synthetic._write_synthetic_example(index, output_dir, rng, image_format, plot_type)
+    with _SYNTHETIC_PATCH_LOCK:
+        original_apply = _synthetic._apply_degradation_filters
+        original_curve = _synthetic._render_curve_mask
+        original_vbar = _synthetic._render_vbar_mask
+        original_hbar = _synthetic._render_hbar_mask
+        original_arrow = _synthetic._render_arrow_mask
+        original_error_bar = _synthetic._render_error_bar_mask
+        _synthetic._apply_degradation_filters = _apply_degradation_filters
+        _synthetic._render_curve_mask = _render_curve_mask
+        _synthetic._render_vbar_mask = _render_vbar_mask
+        _synthetic._render_hbar_mask = _render_hbar_mask
+        _synthetic._render_arrow_mask = _render_arrow_mask
+        _synthetic._render_error_bar_mask = _render_error_bar_mask
+        try:
+            _synthetic._write_synthetic_example(index, output_dir, rng, image_format, plot_type)
+        finally:
+            _synthetic._apply_degradation_filters = original_apply
+            _synthetic._render_curve_mask = original_curve
+            _synthetic._render_vbar_mask = original_vbar
+            _synthetic._render_hbar_mask = original_hbar
+            _synthetic._render_arrow_mask = original_arrow
+            _synthetic._render_error_bar_mask = original_error_bar
 
 
 def _prepare_curve_points(points: pd.DataFrame) -> pd.DataFrame:
