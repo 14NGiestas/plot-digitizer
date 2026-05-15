@@ -332,11 +332,11 @@ class DigitizerWorkflowTests(unittest.TestCase):
         image_h, image_w = 400, 600
         mask_h, mask_w = 160, 160  # model resolution smaller than image
 
-        class _FakeTensor:
+        class FakeTensor:
             def __init__(self, arr: np.ndarray) -> None:
                 self._arr = arr
 
-            def cpu(self) -> "_FakeTensor":
+            def cpu(self) -> "FakeTensor":
                 return self
 
             def numpy(self) -> np.ndarray:
@@ -347,12 +347,12 @@ class DigitizerWorkflowTests(unittest.TestCase):
 
         class FakeMasks:
             def __init__(self) -> None:
-                self.data = [_FakeTensor(np.ones((mask_h, mask_w), dtype=np.float32))]
+                self.data = [FakeTensor(np.ones((mask_h, mask_w), dtype=np.float32))]
 
         class FakeBoxes:
             def __init__(self) -> None:
-                self.conf = [_FakeTensor(np.array(0.9))]
-                self.cls = [_FakeTensor(np.array(0.0))]
+                self.conf = [FakeTensor(np.array(0.9))]
+                self.cls = [FakeTensor(np.array(0.0))]
 
         class FakeResult:
             def __init__(self) -> None:
