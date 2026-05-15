@@ -116,10 +116,9 @@ def generate_synthetic_dataset(
                 "names:",
                 "  0: curve",
                 "  1: vbar",
-                "  2: hbar", 
+                "  2: hbar",
                 "  3: arrow",
                 "  4: error_bar",
             ]
         )
     )
-
