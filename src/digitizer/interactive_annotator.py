@@ -184,9 +184,9 @@ class _AnnotatorSession:
 
         x_coord, y_coord = self._active_point
         x_min = max(0.0, x_coord - self._zoom_half_size)
-        x_max = min(self._w - 1, x_coord + self._zoom_half_size)
+        x_max = min(self._w, x_coord + self._zoom_half_size)
         y_min = max(0.0, y_coord - self._zoom_half_size)
-        y_max = min(self._h - 1, y_coord + self._zoom_half_size)
+        y_max = min(self._h, y_coord + self._zoom_half_size)
         self._zoom_ax.set_xlim(x_min, x_max)
         self._zoom_ax.set_ylim(y_max, y_min)
         self._zoom_ax.axvline(x_coord, color="yellow", linestyle="--", linewidth=1.0)
@@ -270,6 +270,8 @@ class _AnnotatorSession:
         self._fig.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self._fig.canvas.mpl_connect("key_press_event", self._on_key)
         import matplotlib as mpl
+        # Disable default matplotlib navigation shortcuts so they do not overlap
+        # with annotation keys such as c/p/x/y and number mappings.
         keymap_overrides = {
             key: [] for key in mpl.rcParams if key.startswith("keymap.")
         }
