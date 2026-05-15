@@ -34,6 +34,8 @@ def _segmentations_to_yolo_label(
         polygon = _mask_to_yolo_polygon(seg.mask)
         if not polygon:
             continue
+        # Use the class_id from the AI prediction when available; fall back to
+        # the "curve" entry in CLASS_MAPPING (defensive in case of custom mappings).
         class_id = seg.class_id if seg.class_id is not None else CLASS_MAPPING.get("curve", 0)
         lines.append(f"{class_id} " + " ".join(f"{v:.6f}" for v in polygon))
     return "\n".join(lines)

@@ -286,7 +286,7 @@ def interactive_annotation_session(
     output_dir: Path,
     line_width: float = 3.0,
     resize_to: tuple[int, int] | None = None,
-    update_existing: bool = False,  # kept for backward compat; auto-loading is always on
+    update_existing: bool = False,  # deprecated — kept for backward compat, has no effect
 ) -> dict[str, str]:
     """Annotate *image_path* interactively and save a training sample.
 
@@ -298,6 +298,11 @@ def interactive_annotation_session(
 
     On save (Enter), writes the image copy, YOLO label file, annotations file,
     and metadata sidecar to *output_dir*.
+
+    Args:
+        update_existing: **Deprecated.** Existing annotations are always
+            loaded automatically; this argument has no effect and is retained
+            only for backward compatibility with older call sites.
 
     Returns the paths dict from :func:`~digitizer.annotation_io.save_training_sample`,
     or an empty dict when the user cancels.

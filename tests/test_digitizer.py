@@ -95,7 +95,6 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertEqual(metadata["exports"]["replot_image"], str(result.replot_path))
             self.assertEqual(metadata["exports"]["csv"], str(result.csv_path))
             self.assertIsNotNone(result.label_path)
-            assert result.label_path is not None
             self.assertTrue(result.label_path.exists())
             method_counts_are_ints = all(isinstance(value, int) for value in metadata["segmentation"]["method_counts"].values())
             self.assertTrue(method_counts_are_ints)

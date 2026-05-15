@@ -95,7 +95,7 @@ def _save_synthetic_outputs(
     label_path: Path,
     metadata_path: Path,
     annotations_path: Path,
-    ground_truth_path: Path,
+    csv_path: Path,
     x_range: tuple[float, float],
     y_range: tuple[float, float],
     use_log_x: bool,
@@ -124,7 +124,7 @@ def _save_synthetic_outputs(
 
     fig.savefig(image_path, dpi=fig.dpi, format=image_format)
     ground_truth = pd.concat(ground_truth_frames, ignore_index=True)
-    ground_truth.to_csv(ground_truth_path, index=False)
+    ground_truth.to_csv(csv_path, index=False)
     all_label_lines = label_lines + frame_label_lines
     label_path.write_text("\n".join(all_label_lines))
 
@@ -158,5 +158,5 @@ def _save_synthetic_outputs(
         "curves": curve_descriptors,
         "annotations": annotation_descriptors,
         "annotations_path": str(annotations_path),
-        "csv_path": str(ground_truth_path),
+        "csv_path": str(csv_path),
     }, indent=2))
