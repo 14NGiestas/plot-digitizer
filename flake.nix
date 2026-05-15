@@ -84,10 +84,9 @@
             "opencv-python"
           ];
 
-          doCheck = true;
-          checkPhase = ''
-            ${python.interpreter} -m unittest discover -s tests -p 'test_*.py' -v
-          '';
+          # CI runs the unit tests explicitly via the nix develop test step;
+          # keep the package build itself lean to avoid long build-phase stalls.
+          doCheck = false;
         };
         shellPythonPathHook = ''
           if [ -d "$PWD/src/digitizer" ]; then
