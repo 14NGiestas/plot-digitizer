@@ -1,8 +1,8 @@
 """Annotation I/O helpers: polygon geometry and YOLO label writing.
 
-Converts human-supplied annotation descriptors (vbars, hbars, arrows, curves,
-error bars) into normalised YOLO segmentation label lines and writes training
-sample side-cars (image copy + label .txt + metadata .json).
+Converts human-supplied annotation descriptors (curves, bars, arrows, frame and
+axis elements) into normalised YOLO segmentation label lines and writes
+training sample side-cars (image copy + label .txt + metadata .json).
 """
 
 from __future__ import annotations
@@ -20,6 +20,11 @@ CLASS_MAPPING: dict[str, int] = {
     "hbar": 2,
     "arrow": 3,
     "error_bar": 4,
+    "plot_area": 5,
+    "x_axis": 6,
+    "y_axis": 7,
+    "x_anchor": 8,
+    "y_anchor": 9,
 }
 
 
@@ -123,6 +128,49 @@ def polygon_from_error_bar(
     return _normalize_pixel_coords(points, image_width, image_height)
 
 
+def polygon_from_rectangle(
+    top_left: tuple[float, float],
+    bottom_right: tuple[float, float],
+    image_width: int,
+    image_height: int,
+) -> list[float]:
+    """Normalized YOLO polygon for a rectangle annotation."""
+    x1, y1 = top_left
+    x2, y2 = bottom_right
+    left, right = sorted((float(x1), float(x2)))
+    top, bottom = sorted((float(y1), float(y2)))
+    points = [
+        (left, top),
+        (right, top),
+        (right, bottom),
+        (left, bottom),
+    ]
+    return _normalize_pixel_coords(points, image_width, image_height)
+
+
+def polygon_from_line(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    line_width: float,
+    image_width: int,
+    image_height: int,
+) -> list[float]:
+    """Normalized YOLO polygon for a generic line (envelope rectangle)."""
+    return polygon_from_arrow(start, end, line_width, image_width, image_height)
+
+
+def polygon_from_point(
+    center: tuple[float, float],
+    point_size: float,
+    image_width: int,
+    image_height: int,
+) -> list[float]:
+    """Normalized YOLO polygon for a point-like annotation as a square box."""
+    cx, cy = float(center[0]), float(center[1])
+    half = max(1.0, point_size / 2.0)
+    return polygon_from_rectangle((cx - half, cy - half), (cx + half, cy + half), image_width, image_height)
+
+
 def scale_annotation_points(
     ann: dict[str, Any], sx: float, sy: float,
 ) -> dict[str, Any]:
@@ -132,7 +180,13 @@ def scale_annotation_points(
     the user annotated so that absolute pixel coords stay correct.
     """
     scaled = dict(ann)
-    scaled["points"] = [(x * sx, y * sy) for x, y in ann.get("points", [])]
+    scaled["points"] = [(float(x) * sx, float(y) * sy) for x, y in ann.get("points", [])]
+    if "line_width" in ann:
+        scaled["line_width"] = float(ann["line_width"]) * ((sx + sy) / 2.0)
+    if "cap_width" in ann:
+        scaled["cap_width"] = float(ann["cap_width"]) * sx
+    if "point_size" in ann:
+        scaled["point_size"] = float(ann["point_size"]) * ((sx + sy) / 2.0)
     return scaled
 
 
@@ -153,6 +207,7 @@ def annotation_to_yolo_line(
     pts: list[tuple[float, float]] = [(float(p[0]), float(p[1])) for p in ann.get("points", [])]
     lw = float(ann.get("line_width", default_line_width))
     cap_w = float(ann.get("cap_width", lw * 5.0))
+    point_size = float(ann.get("point_size", max(3.0, lw * 1.75)))
 
     if ann_type == "vbar" and pts:
         x = pts[0][0]
@@ -169,6 +224,16 @@ def annotation_to_yolo_line(
         y_top = min(pts[0][1], pts[1][1])
         y_bottom = max(pts[0][1], pts[1][1])
         polygon = polygon_from_error_bar(x, y_top, y_bottom, cap_w, lw, image_width, image_height)
+    elif ann_type == "plot_area" and len(pts) >= 2:
+        polygon = polygon_from_rectangle(pts[0], pts[1], image_width, image_height)
+    elif ann_type == "x_axis" and len(pts) >= 2:
+        polygon = polygon_from_line(pts[0], pts[1], lw, image_width, image_height)
+    elif ann_type == "y_axis" and len(pts) >= 2:
+        polygon = polygon_from_line(pts[0], pts[1], lw, image_width, image_height)
+    elif ann_type == "x_anchor" and pts:
+        polygon = polygon_from_point(pts[0], point_size, image_width, image_height)
+    elif ann_type == "y_anchor" and pts:
+        polygon = polygon_from_point(pts[0], point_size, image_width, image_height)
     else:
         return None
 
@@ -182,6 +247,7 @@ def save_training_sample(
     annotations: list[dict[str, Any]],
     output_dir: Path,
     default_line_width: float = 3.0,
+    resize_to: tuple[int, int] | None = None,
 ) -> dict[str, str]:
     """Copy *image_path* plus YOLO labels and metadata sidecar into *output_dir*.
 
@@ -206,11 +272,25 @@ def save_training_sample(
     labels_dir.mkdir(parents=True, exist_ok=True)
 
     dest_image = images_dir / image_path.name
-    shutil.copy2(image_path, dest_image)
+    if resize_to is None:
+        dest_width, dest_height = image_width, image_height
+        scaled_annotations = [dict(ann) for ann in annotations]
+        shutil.copy2(image_path, dest_image)
+    else:
+        dest_width = int(resize_to[0])
+        dest_height = int(resize_to[1])
+        if dest_width < 1 or dest_height < 1:
+            raise ValueError("resize_to dimensions must be >= 1")
+        sx = dest_width / float(image_width)
+        sy = dest_height / float(image_height)
+        scaled_annotations = [scale_annotation_points(ann, sx, sy) for ann in annotations]
+        import cv2
+        resized = cv2.resize(image, (dest_width, dest_height), interpolation=cv2.INTER_AREA)
+        cv2.imwrite(str(dest_image), resized)
 
     label_lines: list[str] = []
-    for ann in annotations:
-        line = annotation_to_yolo_line(ann, image_width, image_height, default_line_width)
+    for ann in scaled_annotations:
+        line = annotation_to_yolo_line(ann, dest_width, dest_height, default_line_width)
         if line:
             label_lines.append(line)
 
@@ -220,9 +300,13 @@ def save_training_sample(
     metadata_path = images_dir / f"{image_path.stem}.metadata.json"
     metadata_path.write_text(json.dumps({
         "image": str(dest_image),
-        "image_width": image_width,
-        "image_height": image_height,
-        "annotations": annotations,
+        "image_width": dest_width,
+        "image_height": dest_height,
+        "source_image": str(image_path),
+        "source_image_width": image_width,
+        "source_image_height": image_height,
+        "annotations": scaled_annotations,
+        "class_mapping": CLASS_MAPPING,
         "label_count": len(label_lines),
     }, indent=2))
 

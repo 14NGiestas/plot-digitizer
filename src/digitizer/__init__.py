@@ -55,6 +55,9 @@ from .annotation_io import (
     polygon_from_curve,
     polygon_from_error_bar,
     polygon_from_hbar,
+    polygon_from_line,
+    polygon_from_point,
+    polygon_from_rectangle,
     polygon_from_vbar,
     save_training_sample,
     scale_annotation_points,
@@ -185,10 +188,16 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "annotate":
         _set_matplotlib_backend("TkAgg")
+        resize_to: tuple[int, int] | None = None
+        if (args.resize_width is None) ^ (args.resize_height is None):
+            parser.error("--resize-width and --resize-height must be used together.")
+        if args.resize_width is not None and args.resize_height is not None:
+            resize_to = (int(args.resize_width), int(args.resize_height))
         result = interactive_annotation_session(
             image_path=args.input,
             output_dir=args.output_dir,
             line_width=args.line_width,
+            resize_to=resize_to,
         )
         if result:
             print(json.dumps(result, indent=2))

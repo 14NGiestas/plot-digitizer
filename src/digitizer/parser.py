@@ -100,6 +100,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--line-width", type=float, default=3.0,
         help="Stroke width (pixels) used to build polygon envelopes for vbar/hbar/etc.",
     )
+    annotate_parser.add_argument(
+        "--resize-width",
+        type=_parse_positive_int,
+        default=None,
+        help="Optional output image width in pixels. Requires --resize-height.",
+    )
+    annotate_parser.add_argument(
+        "--resize-height",
+        type=_parse_positive_int,
+        default=None,
+        help="Optional output image height in pixels. Requires --resize-width.",
+    )
 
     return parser
 
@@ -108,4 +120,3 @@ def _json_default(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     raise TypeError(f"Unsupported JSON value: {type(value)!r}")
-

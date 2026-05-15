@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .annotation_io import CLASS_MAPPING
 from .constants import DEFAULT_GENERATE_WORKERS_CAP
 from .synth_example import _write_synthetic_example
 
@@ -104,6 +105,9 @@ def generate_synthetic_dataset(
                 pass
 
     # Multi-class segmentation labels must stay contiguous from 0..nc-1
+    names_by_id = {class_id: name for name, class_id in CLASS_MAPPING.items()}
+    if sorted(names_by_id.keys()) != list(range(len(names_by_id))):
+        raise ValueError("CLASS_MAPPING must be contiguous from 0..nc-1")
     dataset_yaml = output_dir / "dataset.yaml"
     dataset_yaml.write_text(
         "\n".join(
@@ -112,13 +116,9 @@ def generate_synthetic_dataset(
                 "train: images",
                 "val: images",
                 "test: images",
-                "nc: 5",
+                f"nc: {len(names_by_id)}",
                 "names:",
-                "  0: curve",
-                "  1: vbar",
-                "  2: hbar",
-                "  3: arrow",
-                "  4: error_bar",
+                *[f"  {index}: {names_by_id[index]}" for index in range(len(names_by_id))],
             ]
         )
     )

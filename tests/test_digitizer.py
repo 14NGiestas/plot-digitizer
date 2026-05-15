@@ -24,6 +24,9 @@ from digitizer.annotation_io import (
     polygon_from_curve,
     polygon_from_error_bar,
     polygon_from_hbar,
+    polygon_from_line,
+    polygon_from_point,
+    polygon_from_rectangle,
     polygon_from_vbar,
     save_training_sample,
     scale_annotation_points,
@@ -684,6 +687,18 @@ class AnnotationIOTests(unittest.TestCase):
         # 8 vertices × 2 coords = 16 values
         self.assertEqual(len(poly), 16)
 
+    def test_polygon_from_rectangle(self) -> None:
+        poly = polygon_from_rectangle((10, 20), (90, 80), 100, 100)
+        self.assertEqual(len(poly), 8)
+
+    def test_polygon_from_line(self) -> None:
+        poly = polygon_from_line((10, 10), (90, 10), 3, 100, 100)
+        self.assertEqual(len(poly), 8)
+
+    def test_polygon_from_point(self) -> None:
+        poly = polygon_from_point((50, 50), 6, 100, 100)
+        self.assertEqual(len(poly), 8)
+
     def test_annotation_to_yolo_line_vbar_format(self) -> None:
         ann = {"type": "vbar", "points": [(100, 50)]}
         line = annotation_to_yolo_line(ann, 200, 200)
@@ -703,6 +718,13 @@ class AnnotationIOTests(unittest.TestCase):
         self.assertIsNotNone(line)
         assert line is not None
         self.assertTrue(line.startswith("3 "))
+
+    def test_annotation_to_yolo_line_frame_classes(self) -> None:
+        self.assertTrue(annotation_to_yolo_line({"type": "plot_area", "points": [(5, 5), (95, 95)]}, 100, 100).startswith("5 "))  # type: ignore[union-attr]
+        self.assertTrue(annotation_to_yolo_line({"type": "x_axis", "points": [(5, 95), (95, 95)]}, 100, 100).startswith("6 "))  # type: ignore[union-attr]
+        self.assertTrue(annotation_to_yolo_line({"type": "y_axis", "points": [(5, 5), (5, 95)]}, 100, 100).startswith("7 "))  # type: ignore[union-attr]
+        self.assertTrue(annotation_to_yolo_line({"type": "x_anchor", "points": [(50, 95)]}, 100, 100).startswith("8 "))  # type: ignore[union-attr]
+        self.assertTrue(annotation_to_yolo_line({"type": "y_anchor", "points": [(5, 50)]}, 100, 100).startswith("9 "))  # type: ignore[union-attr]
 
     def test_annotation_to_yolo_line_unknown_type_returns_none(self) -> None:
         self.assertIsNone(annotation_to_yolo_line({"type": "unknown", "points": [(1, 1)]}, 100, 100))
@@ -754,6 +776,25 @@ class AnnotationIOTests(unittest.TestCase):
             self.assertEqual(metadata["image_height"], 100)
             self.assertEqual(metadata["label_count"], 3)
 
+    def test_save_training_sample_resize_scales_annotations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            import cv2
+            img = np.zeros((100, 200, 3), dtype=np.uint8)
+            img_path = root / "test_image.png"
+            cv2.imwrite(str(img_path), img)
+
+            annotations = [{"type": "x_anchor", "points": [(100, 50)], "point_size": 6.0}]
+            result = save_training_sample(img_path, annotations, root / "out", resize_to=(100, 50))
+            metadata = json.loads(Path(result["metadata_path"]).read_text())
+            self.assertEqual(metadata["source_image_width"], 200)
+            self.assertEqual(metadata["source_image_height"], 100)
+            self.assertEqual(metadata["image_width"], 100)
+            self.assertEqual(metadata["image_height"], 50)
+            scaled_pt = metadata["annotations"][0]["points"][0]
+            self.assertAlmostEqual(float(scaled_pt[0]), 50.0, places=3)
+            self.assertAlmostEqual(float(scaled_pt[1]), 25.0, places=3)
+
 
 class AnnotateParserTests(unittest.TestCase):
     """Tests for the `annotate` CLI sub-command parser."""
@@ -770,6 +811,12 @@ class AnnotateParserTests(unittest.TestCase):
         args = parser.parse_args(["annotate", "img.png", "--output-dir", "/tmp/out", "--line-width", "5.0"])
         self.assertEqual(str(args.output_dir), "/tmp/out")
         self.assertAlmostEqual(args.line_width, 5.0)
+
+    def test_annotate_parser_accepts_resize_dimensions(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["annotate", "img.png", "--resize-width", "640", "--resize-height", "480"])
+        self.assertEqual(args.resize_width, 640)
+        self.assertEqual(args.resize_height, 480)
 
 
 if __name__ == "__main__":

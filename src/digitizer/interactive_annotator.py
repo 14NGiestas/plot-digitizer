@@ -1,13 +1,18 @@
 """Interactive matplotlib annotation session.
 
-Lets the user paint YOLO training annotations (vbar, hbar, arrow, curve,
-error_bar) directly on top of a real plot image.  Keyboard shortcuts:
+Lets the user paint YOLO training annotations (curves, bars, arrows, frame and
+axis elements) directly on top of a real plot image. Keyboard shortcuts:
 
     1 / v  →  vbar     (one click, auto-commits)
     2 / h  →  hbar     (one click, auto-commits)
     3 / a  →  arrow    (two clicks, auto-commits)
     4 / c  →  curve    (many clicks, press F to commit segment)
     5 / e  →  error_bar (two clicks: top-cap then bottom-cap, auto-commits)
+    6 / p  →  plot_area (two clicks: top-left & bottom-right, auto-commits)
+    7 / x  →  x_axis    (two clicks, auto-commits)
+    8 / y  →  y_axis    (two clicks, auto-commits)
+    9      →  x_anchor  (one click, auto-commits)
+    0      →  y_anchor  (one click, auto-commits)
     z      →  undo last committed annotation
     Enter  →  save annotations and close
     Esc    →  close without saving
@@ -31,6 +36,11 @@ _MODE_COLORS: dict[str, str] = {
     "arrow": "crimson",
     "curve": "royalblue",
     "error_bar": "forestgreen",
+    "plot_area": "black",
+    "x_axis": "saddlebrown",
+    "y_axis": "teal",
+    "x_anchor": "goldenrod",
+    "y_anchor": "mediumseagreen",
 }
 _KEY_TO_MODE: dict[str, str] = {
     "1": "vbar", "v": "vbar",
@@ -38,13 +48,27 @@ _KEY_TO_MODE: dict[str, str] = {
     "3": "arrow", "a": "arrow",
     "4": "curve", "c": "curve",
     "5": "error_bar", "e": "error_bar",
+    "6": "plot_area", "p": "plot_area",
+    "7": "x_axis", "x": "x_axis",
+    "8": "y_axis", "y": "y_axis",
+    "9": "x_anchor",
+    "0": "y_anchor",
 }
 # None means variable-length (curve); commit with F key.
 _POINTS_NEEDED: dict[str, int | None] = {
-    "vbar": 1, "hbar": 1, "arrow": 2, "curve": None, "error_bar": 2,
+    "vbar": 1,
+    "hbar": 1,
+    "arrow": 2,
+    "curve": None,
+    "error_bar": 2,
+    "plot_area": 2,
+    "x_axis": 2,
+    "y_axis": 2,
+    "x_anchor": 1,
+    "y_anchor": 1,
 }
 _HELP = (
-    "1/v=vbar 2/h=hbar 3/a=arrow 4/c=curve 5/e=err_bar | "
+    "1/v=vbar 2/h=hbar 3/a=arrow 4/c=curve 5/e=err_bar 6/p=plot_area 7/x=x_axis 8/y=y_axis 9=x_anchor 0=y_anchor | "
     "F=commit curve | Z=undo | Enter=save | Esc=cancel"
 )
 
@@ -104,6 +128,29 @@ class _AnnotatorSession:
                 "", xy=pts[1], xytext=pts[0],
                 arrowprops={"arrowstyle": "->", "color": color, "lw": lw},
             )
+        elif t == "plot_area" and len(pts) >= 2:
+            x1, y1 = pts[0]
+            x2, y2 = pts[1]
+            left, right = sorted((x1, x2))
+            top, bottom = sorted((y1, y2))
+            self._ax.plot(
+                [left, right, right, left, left],
+                [top, top, bottom, bottom, top],
+                color=color,
+                alpha=alpha,
+                linewidth=lw,
+            )
+        elif t in ("x_axis", "y_axis") and len(pts) >= 2:
+            self._ax.plot(
+                [pts[0][0], pts[1][0]],
+                [pts[0][1], pts[1][1]],
+                color=color,
+                alpha=alpha,
+                linewidth=lw,
+            )
+            self._ax.plot([pts[0][0], pts[1][0]], [pts[0][1], pts[1][1]], "o", color=color, alpha=alpha, markersize=5)
+        elif t in ("x_anchor", "y_anchor") and pts:
+            self._ax.plot(pts[0][0], pts[0][1], marker="o", color=color, alpha=alpha, markersize=8)
         elif t in ("curve", "error_bar") and len(pts) >= 2:
             xs = [p[0] for p in pts]
             ys = [p[1] for p in pts]
@@ -190,6 +237,7 @@ def interactive_annotation_session(
     image_path: Path,
     output_dir: Path,
     line_width: float = 3.0,
+    resize_to: tuple[int, int] | None = None,
 ) -> dict[str, str]:
     """Annotate *image_path* interactively and save a training sample.
 
@@ -209,7 +257,13 @@ def interactive_annotation_session(
     if not annotations:
         LOGGER.info("Annotation session cancelled — nothing saved.")
         return {}
-    result = save_training_sample(image_path, annotations, output_dir, line_width)
+    result = save_training_sample(
+        image_path=image_path,
+        annotations=annotations,
+        output_dir=output_dir,
+        default_line_width=line_width,
+        resize_to=resize_to,
+    )
     LOGGER.info(
         "Saved %d annotation(s) → %s", len(annotations), result["label_path"]
     )
