@@ -21,6 +21,7 @@ import concurrent.futures
 import json
 import logging
 import math
+import multiprocessing
 import os
 import sys
 from dataclasses import asdict, dataclass
@@ -1694,7 +1695,8 @@ def generate_synthetic_dataset(
         for task in tasks:
             _generate_one_sample(task)
     else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=n_workers) as executor:
+        mp_ctx = multiprocessing.get_context("spawn")
+        with concurrent.futures.ProcessPoolExecutor(max_workers=n_workers, mp_context=mp_ctx) as executor:
             # Consume the iterator to propagate any worker exceptions.
             for _ in executor.map(_generate_one_sample, tasks):
                 pass
