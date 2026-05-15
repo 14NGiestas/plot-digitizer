@@ -45,6 +45,9 @@ _MODE_COLORS: dict[str, str] = {
 }
 _MIN_ZOOM_HALF_SIZE = 30.0
 _ZOOM_HALF_SIZE_SCALE = 0.075
+_ANNOTATOR_FIGSIZE = (13, 7)
+_ANNOTATOR_WIDTH_RATIOS = [3.2, 1.4]
+_KEYMAP_OVERRIDES = {key: [] for key in mpl.rcParams if key.startswith("keymap.")}
 _KEY_TO_MODE: dict[str, str] = {
     "1": "vbar", "v": "vbar",
     "2": "hbar", "h": "hbar",
@@ -99,8 +102,8 @@ class _AnnotatorSession:
         self._zoom_half_size = max(_MIN_ZOOM_HALF_SIZE, max(self._w, self._h) * _ZOOM_HALF_SIZE_SCALE)
         self._fig, (self._ax, self._zoom_ax) = plt.subplots(
             ncols=2,
-            figsize=(13, 7),
-            gridspec_kw={"width_ratios": [3.2, 1.4]},
+            figsize=_ANNOTATOR_FIGSIZE,
+            gridspec_kw={"width_ratios": _ANNOTATOR_WIDTH_RATIOS},
         )
         self._fig.subplots_adjust(bottom=0.06)
         self._fig.text(0.5, 0.01, _HELP, ha="center", fontsize=8, color="dimgray")
@@ -272,10 +275,7 @@ class _AnnotatorSession:
         self._fig.canvas.mpl_connect("key_press_event", self._on_key)
         # Disable default matplotlib navigation shortcuts so they do not overlap
         # with annotation keys such as c/p/x/y and number mappings.
-        keymap_overrides = {
-            key: [] for key in mpl.rcParams if key.startswith("keymap.")
-        }
-        with mpl.rc_context(rc=keymap_overrides):
+        with mpl.rc_context(rc=_KEYMAP_OVERRIDES):
             plt.show()
         return list(self._committed) if self._do_save else []
 

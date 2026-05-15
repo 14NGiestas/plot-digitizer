@@ -8,12 +8,15 @@ training sample side-cars (image copy + label .txt + metadata .json).
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+LOGGER = logging.getLogger(__name__)
 
 CLASS_MAPPING: dict[str, int] = {
     "curve": 0,
@@ -332,7 +335,13 @@ def load_training_sample_annotations(
         return []
 
     metadata = json.loads(metadata_path.read_text())
-    annotations = [deepcopy(ann) for ann in metadata.get("annotations", []) if isinstance(ann, dict)]
+    raw_annotations = metadata.get("annotations", [])
+    annotations: list[dict[str, Any]] = []
+    for ann in raw_annotations:
+        if isinstance(ann, dict):
+            annotations.append(deepcopy(ann))
+        else:
+            LOGGER.warning("Ignoring malformed annotation in %s: expected dict, got %s", metadata_path, type(ann).__name__)
     if not annotations or target_size is None:
         return annotations
 
