@@ -1441,8 +1441,8 @@ class CurriculumAndNewFeaturesTests(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_color_inversion_produces_inverted_image(self) -> None:
-        """Calling _apply_degradation_filters with intensity='heavy' and a forced-invert rng
-        should produce a pixel-inverted image."""
+        """_apply_degradation_filters with intensity='heavy' and rng state that
+        triggers only inversion should produce a pixel-inverted image."""
         import cv2 as _cv2
         from digitizer.synth_degrade import _apply_degradation_filters
         with tempfile.TemporaryDirectory() as tmp:
@@ -1450,33 +1450,44 @@ class CurriculumAndNewFeaturesTests(unittest.TestCase):
             original = np.full((50, 50, 3), 200, dtype=np.uint8)
             _cv2.imwrite(str(img_path), original)
 
-            # Force rng state so that inversion is applied and all other
-            # degradations are skipped (jpeg and noise only have low prob at heavy).
-            class AlwaysZeroRng:
-                def random(self) -> float:
-                    return 0.0  # < all thresholds → all degradations off except invert
+            # At intensity="heavy" the order of rng.random() calls is:
+            #   1: apply_jpeg   > 0.1
+            #   2: apply_noise  > 0.2
+            #   3: apply_blur   > 0.3
+            #   4: apply_contrast > 0.3
+            #   5: apply_bw     > 0.6
+            #   6: apply_salt_pepper > 0.4
+            #   7: apply_invert > (1 - COLOR_INVERT_PROBABILITY*2) ≈ 0.56
+            # Returning 0.0 for calls 1–6 skips them; returning 1.0 for call 7
+            # ensures inversion fires.
+            call_count = [0]
 
-                def choice(self, arr: object) -> object:
-                    return arr[0]  # type: ignore[index]
+            class ControlledRng:
+                def random(self_) -> float:
+                    call_count[0] += 1
+                    return 1.0 if call_count[0] == 7 else 0.0
 
-                def normal(self, *a: object, **kw: object) -> np.ndarray:
+                def normal(self_, *a: object, **kw: object) -> np.ndarray:
                     return np.zeros((50, 50, 3))
 
-                def uniform(self, low: float, high: float) -> float:
+                def uniform(self_, low: float, high: float) -> float:
                     return high
 
-                def integers(self, *a: object, **kw: object) -> int:
+                def integers(self_, *a: object, **kw: object) -> int:
                     return 0
 
-            rng = AlwaysZeroRng()  # type: ignore[assignment]
+                def choice(self_, arr: object) -> object:
+                    return arr[0]  # type: ignore[index]
+
+            rng = ControlledRng()  # type: ignore[assignment]
             _apply_degradation_filters(img_path, rng, intensity="heavy")  # type: ignore[arg-type]
             result = _cv2.imread(str(img_path))
-            # rng.random() returns 0.0 which is < all "apply_X" thresholds so
-            # none of the other degradations fire. For invert:
-            # apply_invert = rng.random() > (1.0 - COLOR_INVERT_PROBABILITY * 2.0)
-            # = 0.0 > ~0.56 → False. So image should be unchanged.
-            # Let's instead verify that the function runs without error.
             self.assertIsNotNone(result)
+            # All channels were 200 → after bitwise_not they should be 255-200 = 55.
+            self.assertTrue(
+                np.all(result == 255 - 200),
+                f"Expected inverted pixels (55) but got mean {result.mean():.1f}",
+            )
 
     def test_apply_degradation_filters_intensity_none_leaves_image_unchanged(self) -> None:
         """intensity='none' must not modify the image at all."""

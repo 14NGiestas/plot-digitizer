@@ -139,7 +139,7 @@ def _write_synthetic_example(
     # Resolve show_legend for this sample.
     if settings is None:
         show_legend = False
-        add_arrow_labels = False  # legacy: no new rng calls, preserves backward compat
+        add_arrow_labels = False  # preserves rng sequence for difficulty=0 (backward compat)
         degradation_intensity = "normal"
     elif settings["show_legend"] is None:
         show_legend = bool(rng.random() < LEGEND_PROBABILITY)
