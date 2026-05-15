@@ -19,7 +19,7 @@
         # torch / torchvision are intentionally omitted: they are
         # GPU-flavour-specific and must be installed separately, e.g.
         #   pip install torch torchvision \
-        #     --index-url https://download.pytorch.org/whl/<rocm|cu124|cu118>
+        #     --index-url https://download.pytorch.org/whl/<rocm|cu124|cu114>
         aiPackageOverrides = pyfinal: _pyprev: {
           ultralytics-thop = pyfinal.buildPythonPackage rec {
             pname = "ultralytics-thop";
@@ -84,9 +84,10 @@
             "opencv-python"
           ];
 
-          # CI runs the unit tests explicitly via the nix develop test step;
-          # keep the package build itself lean to avoid long build-phase stalls.
-          doCheck = false;
+          doCheck = true;
+          checkPhase = ''
+            ${python.interpreter} -m unittest discover -s tests -p 'test_*.py' -v
+          '';
         };
         shellPythonPathHook = ''
           if [ -d "$PWD/src/digitizer" ]; then
@@ -125,16 +126,6 @@
             python -m venv --system-site-packages "$_ai_venv"
             "$_ai_venv/bin/pip" install --quiet torch torchvision \
               --index-url ${torchIndexUrl}
-            # Nix withPackages creates a wrapped Python whose packages are injected via
-            # .pth files in the wrapper's merged site-packages directory.  A venv built
-            # from this Python resolves the symlink to the base interpreter and records
-            # that base directory in pyvenv.cfg, so --system-site-packages misses all
-            # .pth-injected Nix packages (numpy, pandas, cv2, …).  Writing a .pth file
-            # into the venv's own site-packages exposes those Nix store paths at Python
-            # startup, regardless of any PYTHONPATH override in the calling command.
-            _venv_sp="$("$_ai_venv/bin/python" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
-            python -c 'import sys,os; print("\n".join(p for p in sys.path if p and os.path.isdir(p) and "/nix/store" in p))' \
-              > "$_venv_sp/nix-packages.pth"
             echo "torch/torchvision installed into ''${_ai_venv}."
           fi
           . "$_ai_venv/bin/activate"
@@ -184,7 +175,7 @@
           let
             rocmPkgs = if pkgs ? pkgsRocm then pkgs.pkgsRocm else pkgs;
             cudaPkgs = if pkgs ? pkgsCuda then pkgs.pkgsCuda else pkgs;
-            cudaLegacyPkgs = pkgs.cudaPackages_11_8;
+            cudaLegacyPkgs = pkgs.cudaPackages_11_4;
             # Prefer legacy-set Python first (python310 when exposed) for CUDA
             # 11.8 compatibility, then progressively fall back to broader sets.
             cudaLegacyPython =
@@ -215,7 +206,7 @@
               libcublas    # cuBLAS
             ];
 
-            # --- CUDA legacy (driver 470 class via CUDA 11.8) ---
+            # --- CUDA legacy (driver 470 class via CUDA 11.4) ---
             cudaLegacyLibs = with cudaLegacyPkgs; [
               cuda_cudart  # CUDA runtime
               libcublas    # cuBLAS
@@ -273,7 +264,7 @@
               '';
             };
 
-            # NVIDIA GPU — CUDA legacy (driver 470 class via CUDA 11.8 userspace)
+            # NVIDIA GPU — CUDA legacy (driver 470 class via CUDA 11.4 userspace)
             cuda-legacy = mkPyShell {
               shellPython = cudaLegacyPython.override { packageOverrides = aiPackageOverrides; };
               extraPkgs = cudaLegacyLibs;
@@ -281,11 +272,12 @@
               shellHook = ''
                 export CUDA_PATH="${cudaLegacyPkgs.cuda_cudart}"
                 export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath cudaLegacyLibs}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+                export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
               '' + mkAiVenvHook {
                 venvName = "venv-ai-cuda-legacy";
-                torchIndexUrl = "https://download.pytorch.org/whl/cu118";
+                torchIndexUrl = "https://download.pytorch.org/whl/cu114";
               } + ''
-                echo "CUDA legacy shell ready (Python ${cudaLegacyPythonVersion} from ${cudaLegacyPythonSource}, CUDA 11.8 userspace). Ultralytics + torch active."
+                echo "CUDA legacy shell ready (Python ${cudaLegacyPythonVersion} from ${cudaLegacyPythonSource}, CUDA 11.4 userspace). Ultralytics + torch active."
               '';
             };
           }
