@@ -636,7 +636,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertIn("https://download.pytorch.org/whl/cpu", flake_text)
         self.assertIn("rocm6.2", flake_text)
         self.assertIn("cu124", flake_text)
-        self.assertIn("cu118", flake_text)
+        self.assertIn("cu114", flake_text)
         # Old manual-install hint echoes must be gone.
         self.assertNotIn(
             'echo "Install torch/torchvision for your accelerator before training (see README)."',
