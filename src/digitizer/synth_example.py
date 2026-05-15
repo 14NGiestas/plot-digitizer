@@ -128,6 +128,8 @@ def _write_synthetic_example(
         # clean base image.  Each copy gets its own degradation rng derived from
         # the parent so the sequence is fully deterministic.
         deg_seeds = rng.integers(0, 2**31, size=degradations)
+        variant_images: list[Path] = []
+        variant_labels: list[Path] = []
         for j in range(degradations):
             variant_stem = f"{base_stem}_deg{j:02d}"
             variant_image = output_dir / "images" / f"{variant_stem}.{image_format}"
@@ -137,6 +139,8 @@ def _write_synthetic_example(
             shutil.copy2(label_path, variant_label)
             deg_rng = np.random.default_rng(int(deg_seeds[j]))
             apply_degradation_filters_fn(variant_image, deg_rng)
+            variant_images.append(variant_image)
+            variant_labels.append(variant_label)
         # Remove the clean base image and base label — they were only needed
         # as copy sources; the variant files are the canonical training samples.
         image_path.unlink(missing_ok=True)

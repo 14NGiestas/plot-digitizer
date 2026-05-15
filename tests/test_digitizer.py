@@ -940,6 +940,8 @@ class GenerateDegradationsTests(unittest.TestCase):
             self.assertIn("plot_0001_deg00", stems)
             # Base clean image should NOT be present
             self.assertNotIn("plot_0000", stems)
+            # Base label file should also be removed
+            self.assertFalse((root / "out" / "labels" / "plot_0000.txt").exists())
             # Shared files: 2 annotations + 2 csv (one per base plot)
             ann_files = list((root / "out" / "annotations").glob("*.json"))
             csv_files = list((root / "out" / "csv").glob("*.csv"))

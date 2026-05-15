@@ -170,6 +170,8 @@ class _AnnotatorSession:
             ys = [p[1] for p in pts]
             self._ax.plot(xs, ys, color=color, alpha=alpha, linewidth=lw)
             self._ax.plot(xs, ys, "o", color=color, alpha=alpha, markersize=5)
+        elif not pts:
+            LOGGER.debug("Skipping annotation of type %r with no points in display", t)
 
     def _draw_current(self) -> None:
         if not self._current:

@@ -121,11 +121,12 @@ def _extract_tick_label_annotations(
         except Exception:
             continue
         # Convert display coords (origin bottom-left) to image coords (origin top-left).
+        # pts[0] = top-left corner, pts[1] = bottom-right corner in image coordinates.
         x0 = float(np.clip(bb.x0, 0, width_px))
         x1 = float(np.clip(bb.x1, 0, width_px))
         y0 = float(np.clip(height_px - bb.y1, 0, height_px))
         y1 = float(np.clip(height_px - bb.y0, 0, height_px))
-        if x1 <= x0 or y1 <= y0:
+        if x1 < x0 or y1 < y0 or x1 == x0 or y1 == y0:
             continue
         pixel_annotations.append({
             "type": ann_type,

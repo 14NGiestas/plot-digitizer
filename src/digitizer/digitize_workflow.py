@@ -35,7 +35,9 @@ def _segmentations_to_yolo_label(
         if not polygon:
             continue
         # Use the class_id from the AI prediction when available; fall back to
-        # the "curve" entry in CLASS_MAPPING (defensive in case of custom mappings).
+        # the "curve" entry in CLASS_MAPPING. CLASS_MAPPING is validated to be
+        # contiguous (0..nc-1) at import time in synth_dataset.py, so "curve"
+        # must be present — the .get() default is purely a defensive guard.
         class_id = seg.class_id if seg.class_id is not None else CLASS_MAPPING.get("curve", 0)
         lines.append(f"{class_id} " + " ".join(f"{v:.6f}" for v in polygon))
     return "\n".join(lines)

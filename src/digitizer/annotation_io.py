@@ -241,7 +241,8 @@ def annotation_to_yolo_line(
     elif ann_type == "y_anchor" and pts:
         polygon = polygon_from_point(pts[0], point_size, image_width, image_height)
     elif ann_type in ("x_tick_label", "y_tick_label") and len(pts) >= 2:
-        # Tick labels are stored as bounding-box corners [(x0,y0),(x1,y1)].
+        # Tick labels are stored as [(x0,y0),(x1,y1)] bounding-box corners in
+        # image coordinates (top-left origin, y increases downward).
         polygon = polygon_from_rectangle(pts[0], pts[1], image_width, image_height)
     else:
         return None
@@ -450,8 +451,11 @@ def _filter_annotations_with_points(
         if not isinstance(ann, dict):
             LOGGER.warning("Ignoring malformed annotation in %s: expected dict", source)
             continue
-        if not ann.get("points"):
-            LOGGER.debug("Skipping annotation without points in %s: type=%s", source, ann.get("type", "unknown"))
+        if "points" not in ann or not ann["points"]:
+            LOGGER.debug(
+                "Skipping annotation without points in %s: type=%s",
+                source, ann.get("type", "unknown"),
+            )
             continue
         result.append(deepcopy(ann))
     return result
@@ -523,7 +527,11 @@ def import_annotations_from_old_format(
             f"No importable annotations (with 'points' key) found in {metadata_path}"
         )
 
-    stem = metadata_path.stem.removesuffix(".metadata")
+    # Derive the output stem. Metadata files are typically named
+    # ``<stem>.metadata.json``, so strip the ``.metadata`` part when present.
+    # If the file doesn't follow that convention the raw stem is used as-is.
+    raw_stem = metadata_path.stem  # e.g. "plot_0000.metadata" or "plot_0000"
+    stem = raw_stem.removesuffix(".metadata")
     ann_dir = output_dir / "annotations"
     ann_dir.mkdir(parents=True, exist_ok=True)
     out_path = ann_dir / f"{stem}.json"
