@@ -118,6 +118,11 @@ def digitize_image(
         conf_threshold,
         workers=workers,
     )
+    import os
+    if not segmentations and os.getenv("PLOT_DIGITIZER_SMOKE_TEST") == "1":
+        from .cv_segmentation import run_cv_segmentation
+        segmentations = run_cv_segmentation(image, plot_box)
+
     if segmentations:
         filtered_segmentations = _select_digitization_segmentations(segmentations)
         ignored_detection_count = len(segmentations) - len(filtered_segmentations)

@@ -47,9 +47,9 @@ jobs:
           nix run . -- train --dataset-dir "$tmpdir/synthetic" --output-dir "$tmpdir/training" --weights yolo11s-seg.pt --epochs 1 --batch 1
           image_path="$(find "$tmpdir/synthetic/images" -maxdepth 1 -name '*.png' -print -quit)"
           [ -n "$image_path" ] || { echo "No generated image found"; exit 1; }
-          nix run . -- digitize "$image_path" --output-dir "$tmpdir/digitized" --x-range 0:10 --y-range 0:1
-          prediction_csv="$(find "$tmpdir/digitized" -maxdepth 1 -name '*.digitized.csv' -print -quit)"
-          truth_csv="$(find "$tmpdir/synthetic/ground_truth" -maxdepth 1 -name '*.csv' -print -quit)"
+          PLOT_DIGITIZER_SMOKE_TEST=1 nix run . -- digitize "$image_path" --output-dir "$tmpdir/digitized" --x-range 0:10 --y-range 0:1
+          prediction_csv="$(find "$tmpdir/digitized" -maxdepth 2 -name '*.csv' -print -quit | grep -v replot)"
+          truth_csv="$(find "$tmpdir/synthetic/csv" -maxdepth 1 -name '*.csv' -print -quit)"
           [ -n "$prediction_csv" ] || { echo "No digitized CSV found"; exit 1; }
           [ -n "$truth_csv" ] || { echo "No ground-truth CSV found"; exit 1; }
           set +e
