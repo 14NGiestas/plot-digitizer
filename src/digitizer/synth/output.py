@@ -235,6 +235,51 @@ def _extract_axis_label_annotations(
     return pixel_annotations, label_lines
 
 
+def _write_style_labels(
+    style_labels_path: Path,
+    curve_descriptors: list[dict[str, Any]],
+    annotation_descriptors: list[dict[str, Any]],
+) -> None:
+    """Write style labels for interpretation layer training.
+    
+    Creates a JSON file mapping each curve and annotation to its style attributes.
+    This is used during training to compute style classification/regression losses.
+    """
+    linestyle_map = {"-": 0, "--": 1, "-.": 2, ":": 3}
+    marker_map = {"None": 0, "o": 1, "x": 2, "s": 3}
+    color_map = {"tab:red": 0, "tab:blue": 1, "tab:green": 2, "tab:purple": 3, "tab:orange": 4, "tab:cyan": 5}
+    arrowstyle_map = {"->": 0, "-|>": 1, "fancy": 2, "simple": 3, "wedge": 4}
+    
+    style_labels = {
+        "curves": [],
+        "arrows": []
+    }
+    
+    for desc in curve_descriptors:
+        style = desc.get("style", {})
+        style_labels["curves"].append({
+            "dataset_id": desc.get("dataset_id"),
+            "linestyle": linestyle_map.get(style.get("linestyle", "-"), 0),
+            "marker": marker_map.get(style.get("marker", "None"), 0),
+            "color": color_map.get(style.get("color", "tab:blue"), 1),
+        })
+    
+    for desc in annotation_descriptors:
+        if desc.get("type") == "arrow":
+            style = desc.get("style", {})
+            label_pos = desc.get("label_pos")
+            arrow_entry = {
+                "description": desc.get("description"),
+                "arrowstyle": arrowstyle_map.get(style.get("arrowstyle", "->"), 0),
+                "linewidth": float(style.get("linewidth", 2.0)),
+            }
+            if label_pos:
+                arrow_entry["label_pos"] = label_pos
+            style_labels["arrows"].append(arrow_entry)
+    
+    style_labels_path.write_text(json.dumps(style_labels, indent=2))
+
+
 def _save_synthetic_outputs(
     fig: Any,
     ax: Any,
@@ -317,3 +362,7 @@ def _save_synthetic_outputs(
         "annotations_path": str(annotations_path),
         "csv_path": str(csv_path),
     }, indent=2))
+
+    # Write style labels for interpretation layer training
+    style_labels_path = label_path.parent / f"{label_path.stem}_styles.json"
+    _write_style_labels(style_labels_path, curve_descriptors, annotation_descriptors)

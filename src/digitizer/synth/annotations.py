@@ -57,14 +57,17 @@ def _add_annotation_layers(
     for arrow_idx in range(int(rng.integers(eff_arrow[0], eff_arrow[1] + 1))):
         start = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
         end = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
-        style = {"linewidth": rng.uniform(1.5, 3.0)}
-        ax.annotate("", xy=(x_norm_to_data(end[0]), y_norm_to_data(end[1])), xytext=(x_norm_to_data(start[0]), y_norm_to_data(start[1])), arrowprops={"arrowstyle": "->", "color": "black", "lw": style["linewidth"]})
+        arrowstyle = rng.choice(["->", "-|>", "fancy", "simple", "wedge"])
+        style = {"linewidth": rng.uniform(1.5, 3.0), "arrowstyle": arrowstyle}
+        ax.annotate("", xy=(x_norm_to_data(end[0]), y_norm_to_data(end[1])), xytext=(x_norm_to_data(start[0]), y_norm_to_data(start[1])), arrowprops={"arrowstyle": arrowstyle, "color": "black", "lw": style["linewidth"]})
+        label_pos = None
         if add_arrow_labels and rng.random() < ARROW_LABEL_PROBABILITY:
             label_text = str(rng.choice(ARROW_LABEL_TEXTS))
             mid_x = x_norm_to_data((start[0] + end[0]) / 2.0)
             mid_y = y_norm_to_data((start[1] + end[1]) / 2.0)
             ax.text(mid_x, mid_y, label_text, fontsize=float(rng.uniform(7.0, 11.0)), color="black", ha="left", va="bottom")
-        annotation_descriptors.append({"type": "arrow", "class_id": 3, "start": start, "end": end, "description": f"annotation_arrow_{arrow_idx}", "style": style})
+            label_pos = {"x": (start[0] + end[0]) / 2.0, "y": (start[1] + end[1]) / 2.0}
+        annotation_descriptors.append({"type": "arrow", "class_id": 3, "start": start, "end": end, "description": f"annotation_arrow_{arrow_idx}", "style": style, "label_pos": label_pos})
 
     for eb_idx in range(int(rng.integers(eff_error[0], eff_error[1] + 1))):
         x_pos = rng.uniform(0.1, 0.9)
