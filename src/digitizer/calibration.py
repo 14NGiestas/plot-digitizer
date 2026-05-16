@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 
 from .axis_parsing import _resolve_bounds_from_references
-from .constants import DARK_PIXEL_PERCENTILE, DEFAULT_X_RANGE, DEFAULT_Y_RANGE, MAX_DARK_THRESHOLD
+from .constants import DARK_PIXEL_PERCENTILE, MAX_DARK_THRESHOLD
 from .image_ops import _parse_sidecar_metadata
 from .models import AxisCalibration, AxisReferencePair, PlotBox
 
@@ -59,8 +59,10 @@ def calibrate_axes(
 ) -> tuple[AxisCalibration, dict[str, Any]]:
     """Resolve axis ranges from CLI hints, sidecars, OCR, or defaults."""
     sidecar = _parse_sidecar_metadata(image_path) or {}
-    x_bounds = x_range or tuple(sidecar.get("x_range", DEFAULT_X_RANGE))
-    y_bounds = y_range or tuple(sidecar.get("y_range", DEFAULT_Y_RANGE))
+    sidecar_x_range = sidecar.get("x_range")
+    sidecar_y_range = sidecar.get("y_range")
+    x_bounds = x_range or (tuple(sidecar_x_range) if sidecar_x_range is not None else None)
+    y_bounds = y_range or (tuple(sidecar_y_range) if sidecar_y_range is not None else None)
     used_auto_x = False
     used_auto_y = False
     auto_anchor_pixels: dict[str, tuple[float, float]] | None = None
@@ -89,6 +91,16 @@ def calibrate_axes(
             scale=y_scale,
             invert_y=invert_y,
         )
+    if x_bounds is None:
+        raise RuntimeError(
+            "Unable to calibrate X-axis bounds. Provide --x-range/--x-reference, "
+            "sidecar metadata, or --interactive-axis-selection."
+        )
+    if y_bounds is None:
+        raise RuntimeError(
+            "Unable to calibrate Y-axis bounds. Provide --y-range/--y-reference, "
+            "sidecar metadata, or --interactive-axis-selection."
+        )
     calibration = AxisCalibration(
         x_min=float(x_bounds[0]),
         x_max=float(x_bounds[1]),
@@ -109,12 +121,12 @@ def calibrate_axes(
             "x_range_source": (
                 "auto-anchor"
                 if used_auto_x
-                else ("reference" if x_reference else ("cli" if x_range else ("sidecar" if "x_range" in sidecar else "default")))
+                else ("reference" if x_reference else ("cli" if x_range else "sidecar"))
             ),
             "y_range_source": (
                 "auto-anchor"
                 if used_auto_y
-                else ("reference" if y_reference else ("cli" if y_range else ("sidecar" if "y_range" in sidecar else "default")))
+                else ("reference" if y_reference else ("cli" if y_range else "sidecar"))
             ),
             "x_scale": calibration.x_scale,
             "y_scale": calibration.y_scale,
@@ -122,9 +134,4 @@ def calibrate_axes(
         },
         "warnings": [],
     }
-    if not x_range and "x_range" not in sidecar and not x_reference and not used_auto_x:
-        metadata["warnings"].append("X-axis bounds were not auto-detected; defaulting to 0:1. Pass --x-range for better accuracy.")
-    if not y_range and "y_range" not in sidecar and not y_reference and not used_auto_y:
-        metadata["warnings"].append("Y-axis bounds were not auto-detected; defaulting to 0:1. Pass --y-range for better accuracy.")
     return calibration, metadata
-

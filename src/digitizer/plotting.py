@@ -79,7 +79,7 @@ def create_replot(replot_frame: pd.DataFrame, calibration: AxisCalibration, imag
         series = replot_frame[["x_real", column]].dropna()
         if series.empty:
             continue
-        axis.plot(series["x_real"], series[column], linewidth=2.0, label=column)
+        axis.plot(series["x_real"], series[column], '.', linewidth=2.0, label=column)
         plotted_columns += 1
     axis.set_title(f"Digitized replot: {image_name}")
     axis.set_xlabel("X")

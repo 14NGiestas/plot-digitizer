@@ -86,6 +86,7 @@ def _write_synthetic_example(
         rng,
         image_format,
         plot_type,
+        difficulty=0,
         apply_degradation_filters_fn=_apply_degradation_filters,
         render_curve_mask_fn=_render_curve_mask,
         render_vbar_mask_fn=_render_vbar_mask,
@@ -105,6 +106,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         generate_synthetic_dataset(
             args.output_dir, args.count, args.seed, args.image_format, args.plot_type,
             workers=args.workers, degradations=args.degradations,
+            difficulty=args.difficulty, curriculum=args.curriculum,
         )
         total_images = args.count * args.degradations
         LOGGER.info(
@@ -154,8 +156,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _format_reference_pair_cli_value(x_reference),
                 _format_reference_pair_cli_value(y_reference),
             )
-        results = []
-        for image_path in images:
+        
+        import concurrent.futures
+        import os
+
+        def _process_one(image_path: Path) -> dict[str, Any]:
             result = digitize_image(
                 image_path=image_path,
                 output_dir=args.output_dir,
@@ -169,22 +174,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                 weights=args.weights,
                 conf_threshold=args.conf_threshold,
                 create_overlay_image=args.overlay,
-                workers=args.workers,
+                workers=1, # internal workers set to 1 since we parallelize across images
+                imgsz=args.imgsz,
                 auto_axis_anchors=not args.disable_auto_axis_anchors,
             )
-            results.append(
-                {
-                    "image": str(image_path),
-                    "csv_path": str(result.csv_path),
-                    "replot_csv_path": str(result.replot_csv_path),
-                    "metadata_path": str(result.metadata_path),
-                    "replot_path": str(result.replot_path),
-                    "label_path": str(result.label_path) if result.label_path else None,
-                    "overlay_path": str(result.overlay_path) if result.overlay_path else None,
-                    "point_count": result.point_count,
-                    "dataset_count": result.dataset_count,
-                }
-            )
+            return {
+                "image": str(image_path),
+                "csv_path": str(result.csv_path),
+                "replot_csv_path": str(result.replot_csv_path),
+                "metadata_path": str(result.metadata_path),
+                "replot_path": str(result.replot_path),
+                "label_path": str(result.label_path) if result.label_path else None,
+                "overlay_path": str(result.overlay_path) if result.overlay_path else None,
+                "point_count": result.point_count,
+                "dataset_count": result.dataset_count,
+            }
+
+        results = []
+        n_workers = args.workers if args.workers is not None else min(os.cpu_count() or 1, len(images), 8)
+        if n_workers <= 1 or len(images) <= 1:
+            for image_path in images:
+                results.append(_process_one(image_path))
+        else:
+            # We use ThreadPoolExecutor to avoid pickling issues and share the GPU context safely if any.
+            # PyTorch inference releases the GIL, so threading is efficient.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as executor:
+                results = list(executor.map(_process_one, images))
+
         print(json.dumps(results, indent=2))
         return 0
 

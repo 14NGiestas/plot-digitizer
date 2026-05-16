@@ -46,11 +46,31 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Number of worker processes for parallel generation (default: min(os.cpu_count(), count, 8)). Use 1 for sequential.",
     )
+    generate_parser.add_argument(
+        "--difficulty",
+        type=int,
+        choices=[0, 1, 2, 3, 4],
+        default=0,
+        metavar="LEVEL",
+        help=(
+            "Difficulty level for all generated samples (0=no restrictions/full complexity, "
+            "1=easy, 2=medium-easy, 3=medium-hard, 4=hard). "
+            "Use --curriculum to generate a balanced mix of all levels."
+        ),
+    )
+    generate_parser.add_argument(
+        "--curriculum",
+        action="store_true",
+        help=(
+            "Distribute samples evenly across difficulty levels 1–4 in round-robin order "
+            "(1,2,3,4,1,2,3,4,…), ideal for curriculum learning. Overrides --difficulty."
+        ),
+    )
 
     train_parser = subparsers.add_parser("train", help="Train or plan a YOLO segmentation model.")
     train_parser.add_argument("--dataset-dir", type=Path, required=True)
     train_parser.add_argument("--output-dir", type=Path, default=Path("training-runs"))
-    train_parser.add_argument("--weights", default="yolov8n-seg.pt")
+    train_parser.add_argument("--weights", default="yolo11s-seg.pt")
     train_parser.add_argument("--epochs", type=int, default=25)
     train_parser.add_argument("--imgsz", type=int, default=640)
     train_parser.add_argument("--batch", type=int, default=8)
@@ -92,6 +112,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     digitize_parser.add_argument("--weights", default=None, help="YOLO .pt or .onnx segmentation weights.")
     digitize_parser.add_argument("--conf-threshold", type=float, default=0.25)
+    digitize_parser.add_argument(
+        "--imgsz",
+        type=_parse_positive_int,
+        default=None,
+        help="Optional inference image size. If not provided, YOLO defaults to the size used during training.",
+    )
     digitize_parser.add_argument(
         "--workers",
         type=_parse_positive_int,

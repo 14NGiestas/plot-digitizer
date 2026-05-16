@@ -13,7 +13,6 @@ from .ai_segmentation import run_ai_segmentation
 from .annotation_io import CLASS_MAPPING
 from .calibration import calibrate_axes
 from .constants import LOGGER
-from .cv_segmentation import run_cv_segmentation
 from .image_ops import load_image, preprocess_image, resolve_plot_box
 from .models import AxisReferencePair, DigitizeResult, SegmentationResult
 from .plotting import build_replot_frame, create_overlay, create_replot
@@ -43,6 +42,23 @@ def _segmentations_to_yolo_label(
     return "\n".join(lines)
 
 
+def _select_digitization_segmentations(
+    segmentations: list[SegmentationResult],
+) -> list[SegmentationResult]:
+    """Keep only curve masks when AI predictions include class IDs."""
+    if not segmentations:
+        return []
+    curve_class_id = CLASS_MAPPING.get("curve")
+    if curve_class_id is None or all(seg.class_id is None for seg in segmentations):
+        return segmentations
+    curve_segmentations = [
+        segmentation
+        for segmentation in segmentations
+        if segmentation.class_id in (None, curve_class_id)
+    ]
+    return curve_segmentations
+
+
 def digitize_image(
     image_path: Path,
     output_dir: Path,
@@ -57,6 +73,7 @@ def digitize_image(
     conf_threshold: float,
     create_overlay_image: bool,
     workers: int | None = None,
+    imgsz: int | None = None,
     auto_axis_anchors: bool = True,
 ) -> DigitizeResult:
     """Digitize a single image and write artifacts under *output_dir*.
@@ -101,15 +118,38 @@ def digitize_image(
         weights,
         conf_threshold,
         workers=workers,
+        imgsz=imgsz,
     )
-    if not segmentations:
-        LOGGER.info("AI segmentation unavailable or empty for %s; using CV fallback.", image_path.name)
+    import os
+    if not segmentations and os.getenv("PLOT_DIGITIZER_SMOKE_TEST") == "1":
+        from .cv_segmentation import run_cv_segmentation
         segmentations = run_cv_segmentation(image, plot_box)
-    if not segmentations:
-        raise RuntimeError(f"Unable to isolate curves in {image_path}. Try passing --x-range/--y-range or a segmentation model.")
 
-    point_frames = [extract_curve_points(segmentation, plot_box) for segmentation in segmentations]
-    combined = pd.concat(point_frames, ignore_index=True) if point_frames else pd.DataFrame()
+    if segmentations:
+        filtered_segmentations = _select_digitization_segmentations(segmentations)
+        ignored_detection_count = len(segmentations) - len(filtered_segmentations)
+        if ignored_detection_count:
+            LOGGER.info(
+                "Ignoring %s non-curve AI detection(s) for %s during point extraction.",
+                ignored_detection_count,
+                image_path.name,
+            )
+        segmentations = filtered_segmentations
+    if not segmentations:
+        raise RuntimeError(
+            f"Unable to isolate curves in {image_path}. "
+            "AI segmentation returned no curve-class masks."
+        )
+
+    point_frames: list[pd.DataFrame] = []
+    for segmentation in segmentations:
+        frame = extract_curve_points(segmentation, plot_box)
+        if frame.empty:
+            continue
+        point_frames.append(frame)
+    if not point_frames:
+        raise RuntimeError(f"No digitized points were extracted from {image_path}.")
+    combined = pd.concat(point_frames, ignore_index=True)
     combined = combined.dropna().sort_values(["dataset_id", "x_px"]).reset_index(drop=True)
     converted = convert_points(combined, calibration, plot_box)
     if converted.empty:
@@ -181,4 +221,3 @@ def digitize_image(
         dataset_count=int(converted["dataset_id"].nunique()),
         label_path=label_path,
     )
-

@@ -6,15 +6,25 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-from skimage import measure
+from skimage import measure, morphology
 
-from .constants import MAX_POLYGON_POINTS
+from .constants import CURVE_MASK_PADDING_PIXELS, MAX_POLYGON_POINTS
 
-def _render_vbar_mask(fig_size: tuple[float, float], dpi: int, x_pos: float, y_range: tuple[float, float], 
-                      width: float, style: dict[str, Any]) -> np.ndarray:
+def _render_vbar_mask(
+    fig_size: tuple[float, float],
+    dpi: int,
+    x_pos: float,
+    y_range: tuple[float, float],
+    width: float,
+    style: dict[str, Any],
+    ax_position: Any = None,
+) -> np.ndarray:
     """Render a vertical bar mask."""
-    fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
-    ax.set_facecolor("black")
+    fig = plt.figure(figsize=fig_size, dpi=dpi, facecolor="black")
+    if ax_position is not None:
+        ax = fig.add_axes(ax_position, facecolor="black")
+    else:
+        ax = fig.add_subplot(111, facecolor="black")
     ax.set_xlim(0, 1)
     ax.set_ylim(*y_range)
     ax.axvline(x=x_pos, ymin=0, ymax=1, color="white", linewidth=width, linestyle=style.get("linestyle", "-"))
@@ -33,10 +43,14 @@ def _render_hbar_mask(
     height: float,
     style: dict[str, Any],
     x_scale: str = "linear",
+    ax_position: Any = None,
 ) -> np.ndarray:
     """Render a horizontal bar mask."""
-    fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
-    ax.set_facecolor("black")
+    fig = plt.figure(figsize=fig_size, dpi=dpi, facecolor="black")
+    if ax_position is not None:
+        ax = fig.add_axes(ax_position, facecolor="black")
+    else:
+        ax = fig.add_subplot(111, facecolor="black")
     ax.set_xlim(*x_range)
     ax.set_xscale(x_scale)
     ax.set_ylim(0, 1)
@@ -49,10 +63,13 @@ def _render_hbar_mask(
 
 
 def _render_arrow_mask(fig_size: tuple[float, float], dpi: int, start: tuple[float, float], 
-                       end: tuple[float, float], style: dict[str, Any]) -> np.ndarray:
+                       end: tuple[float, float], style: dict[str, Any], ax_position: Any = None) -> np.ndarray:
     """Render an arrow annotation mask."""
-    fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
-    ax.set_facecolor("black")
+    fig = plt.figure(figsize=fig_size, dpi=dpi, facecolor="black")
+    if ax_position is not None:
+        ax = fig.add_axes(ax_position, facecolor="black")
+    else:
+        ax = fig.add_subplot(111, facecolor="black")
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.annotate("", xy=end, xytext=start, arrowprops=dict(arrowstyle="->", color="white", 
@@ -65,10 +82,13 @@ def _render_arrow_mask(fig_size: tuple[float, float], dpi: int, start: tuple[flo
 
 
 def _render_error_bar_mask(fig_size: tuple[float, float], dpi: int, x_pos: float, y_pos: float,
-                           y_err: float, style: dict[str, Any]) -> np.ndarray:
+                           y_err: float, style: dict[str, Any], ax_position: Any = None) -> np.ndarray:
     """Render an error bar mask."""
-    fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
-    ax.set_facecolor("black")
+    fig = plt.figure(figsize=fig_size, dpi=dpi, facecolor="black")
+    if ax_position is not None:
+        ax = fig.add_axes(ax_position, facecolor="black")
+    else:
+        ax = fig.add_subplot(111, facecolor="black")
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     cap_width = style.get("cap_width", 0.03)
@@ -90,9 +110,14 @@ def _render_curve_mask(
     y_range: tuple[float, float],
     style: dict[str, Any],
     x_scale: str = "linear",
+    curve_mask_padding_pixels: int = CURVE_MASK_PADDING_PIXELS,
+    ax_position: Any = None,
 ) -> np.ndarray:
-    fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
-    ax.set_facecolor("black")
+    fig = plt.figure(figsize=fig_size, dpi=dpi, facecolor="black")
+    if ax_position is not None:
+        ax = fig.add_axes(ax_position, facecolor="black")
+    else:
+        ax = fig.add_subplot(111, facecolor="black")
     ax.set_xlim(*x_range)
     ax.set_xscale(x_scale)
     ax.set_ylim(*y_range)
@@ -101,7 +126,10 @@ def _render_curve_mask(
     fig.canvas.draw()
     buffer = np.asarray(fig.canvas.buffer_rgba())
     plt.close(fig)
-    return np.max(buffer[:, :, :3], axis=2) > 200
+    mask = np.max(buffer[:, :, :3], axis=2) > 200
+    if curve_mask_padding_pixels > 0:
+        mask = morphology.dilation(mask, morphology.disk(curve_mask_padding_pixels))
+    return mask
 
 
 def _mask_to_yolo_polygon(mask: np.ndarray) -> list[float]:
@@ -115,4 +143,3 @@ def _mask_to_yolo_polygon(mask: np.ndarray) -> list[float]:
     for y_coord, x_coord in contour[::step]:
         polygon.extend([float(np.clip(x_coord / width, 0.0, 1.0)), float(np.clip(y_coord / height, 0.0, 1.0))])
     return polygon if len(polygon) >= 6 else []
-
