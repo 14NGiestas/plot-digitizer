@@ -188,6 +188,53 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    curriculum_parser = subparsers.add_parser(
+        "curriculum",
+        help="Run full curriculum pipeline: generate all stages, train sequentially, and fine-tune interpretation heads.",
+    )
+    curriculum_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("curriculum-run"),
+        help="Root directory for all curriculum outputs (default: curriculum-run).",
+    )
+    curriculum_parser.add_argument(
+        "--samples-per-stage",
+        type=int,
+        default=500,
+        help="Number of synthetic samples per difficulty stage (default: 500).",
+    )
+    curriculum_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility.",
+    )
+    curriculum_parser.add_argument(
+        "--epochs",
+        type=int,
+        default=25,
+        help="Training epochs per stage.",
+    )
+    curriculum_parser.add_argument(
+        "--batch",
+        type=int,
+        default=16,
+        help="Batch size for training.",
+    )
+    curriculum_parser.add_argument(
+        "--workers",
+        type=_parse_positive_int,
+        default=None,
+        metavar="N",
+        help="Number of workers for generation and training.",
+    )
+    curriculum_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Execute the full curriculum pipeline. Without this flag, only prints the plan.",
+    )
+
     return parser
 
 

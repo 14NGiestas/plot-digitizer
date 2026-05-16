@@ -232,6 +232,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             LOGGER.info("No annotations saved.")
         return 0
 
+    if args.command == "curriculum":
+        _run_curriculum(
+            output_dir=args.output_dir,
+            samples_per_stage=args.samples_per_stage,
+            seed=args.seed,
+            epochs=args.epochs,
+            batch=args.batch,
+            workers=args.workers,
+            execute=args.execute,
+        )
+        return 0
+
     if args.command == "import-annotations":
         try:
             out_path = import_annotations_from_old_format(args.source, args.output_dir)
@@ -242,3 +254,114 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser.error(f"Unsupported command: {args.command}")
     return 2
+
+
+def _run_curriculum(
+    output_dir: Path,
+    samples_per_stage: int,
+    seed: int,
+    epochs: int,
+    batch: int,
+    workers: int | None,
+    execute: bool,
+) -> dict[str, Any]:
+    """Run the full curriculum pipeline: generate, train, and fine-tune."""
+    from .training import _load_hyp_overrides
+
+    stages = [
+        {"difficulty": 1, "hyp": Path("runs/curriculum_stage1.yml"), "name": "stage1"},
+        {"difficulty": 2, "hyp": Path("runs/curriculum_stage2.yml"), "name": "stage2"},
+        {"difficulty": 3, "hyp": Path("runs/curriculum_stage3.yml"), "name": "stage3"},
+        {"difficulty": 4, "hyp": Path("runs/curriculum_stage4.yml"), "name": "stage4"},
+    ]
+
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+
+    plan: dict[str, Any] = {
+        "root": str(root),
+        "samples_per_stage": samples_per_stage,
+        "stages": [],
+    }
+
+    weights = "yolo11s-seg.pt"
+
+    for stage in stages:
+        stage_dir = root / stage["name"]
+        data_dir = stage_dir / "data"
+        train_dir = stage_dir / "train"
+
+        stage_plan: dict[str, Any] = {
+            "name": stage["name"],
+            "difficulty": stage["difficulty"],
+            "data_dir": str(data_dir),
+            "train_dir": str(train_dir),
+            "weights": weights,
+        }
+
+        if execute:
+            LOGGER.info("Generating %d samples for %s (difficulty %d)...", samples_per_stage, stage["name"], stage["difficulty"])
+            generate_synthetic_dataset(
+                output_dir=data_dir,
+                count=samples_per_stage,
+                seed=seed + stage["difficulty"],
+                image_format="png",
+                plot_type="mixed",
+                workers=workers,
+                difficulty=stage["difficulty"],
+            )
+
+            hyp_yaml = stage["hyp"]
+            hyp_overrides = _load_hyp_overrides(hyp_yaml if hyp_yaml.exists() else None)
+
+            stage_epochs = hyp_overrides.pop("epochs", epochs)
+            stage_batch = hyp_overrides.pop("batch", batch)
+            stage_imgsz = hyp_overrides.pop("imgsz", 640)
+
+            LOGGER.info("Training %s for %d epochs (imgsz=%d, batch=%d)...", stage["name"], stage_epochs, stage_imgsz, stage_batch)
+            run_training(
+                dataset_dir=data_dir,
+                output_dir=train_dir,
+                epochs=stage_epochs,
+                imgsz=stage_imgsz,
+                weights=weights,
+                batch=stage_batch,
+                execute=True,
+                hyp_yaml=hyp_yaml,
+                workers=workers,
+            )
+
+            best_pt = train_dir / "synthetic_plot_digitizer" / "weights" / "best.pt"
+            if best_pt.exists():
+                weights = str(best_pt)
+            else:
+                weights_dir = train_dir / "synthetic_plot_digitizer" / "weights"
+                if weights_dir.exists():
+                    pts = list(weights_dir.glob("*.pt"))
+                    if pts:
+                        weights = str(pts[0])
+
+            stage_plan["result_weights"] = weights
+
+        plan["stages"].append(stage_plan)
+
+    if execute:
+        LOGGER.info("Fine-tuning interpretation heads...")
+        from .training.interpret_finetune import fine_tune_interpretation_heads
+
+        final_stage = stages[-1]
+        final_data = root / final_stage["name"] / "data"
+        interpret_dir = root / "interpret-finetune"
+
+        fine_tune_interpretation_heads(
+            model_path=weights,
+            dataset_dir=final_data,
+            output_dir=interpret_dir,
+            epochs=10,
+            batch_size=batch,
+            device="cpu",
+        )
+        plan["interpret_finetune"] = str(interpret_dir)
+
+    print(json.dumps(plan, indent=2, default=_json_default))
+    return plan

@@ -8,6 +8,20 @@ from typing import Any
 
 from .constants import LOGGER
 
+_KEYS_TO_STRIP = {"model", "nc", "names", "scales", "backbone", "head"}
+_KEYS_ALREADY_PASSED = {"data", "task", "epochs", "imgsz", "batch", "project", "name", "amp", "workers"}
+
+
+def _load_hyp_overrides(hyp_yaml: Path | None) -> dict[str, Any]:
+    """Load hyperparameter overrides from a YAML, stripping architecture keys."""
+    if hyp_yaml is None:
+        return {}
+    import yaml
+    with open(hyp_yaml) as f:
+        raw = yaml.safe_load(f) or {}
+    return {k: v for k, v in raw.items() if k not in _KEYS_TO_STRIP}
+
+
 def run_training(
     dataset_dir: Path,
     output_dir: Path,
@@ -24,6 +38,8 @@ def run_training(
     dataset_yaml = (dataset_dir / "dataset.yaml").resolve()
     if not dataset_yaml.exists():
         raise FileNotFoundError(f"Dataset config not found: {dataset_yaml}")
+    hyp_overrides = _load_hyp_overrides(hyp_yaml)
+    hyp_path = hyp_yaml.resolve() if hyp_yaml is not None else None
     training_plan = {
         "dataset": str(dataset_yaml),
         "weights": weights,
@@ -34,10 +50,7 @@ def run_training(
         "task": "segment",
         "amp": amp,
     }
-    hyp_path = hyp_yaml.resolve() if hyp_yaml is not None else None
     if hyp_path is not None:
-        if not hyp_path.exists():
-            raise FileNotFoundError(f"Hyperparameter config not found: {hyp_path}")
         training_plan["cfg"] = str(hyp_path)
     if workers is not None:
         training_plan["workers"] = workers
@@ -95,8 +108,9 @@ def run_training(
         }
         if workers is not None:
             train_kwargs["workers"] = workers
-        if hyp_path is not None:
-            train_kwargs["cfg"] = str(hyp_path)
+        for key, value in hyp_overrides.items():
+            if key not in _KEYS_ALREADY_PASSED:
+                train_kwargs[key] = value
         training_plan["result"] = model.train(**train_kwargs).save_dir.as_posix()
     return training_plan
 

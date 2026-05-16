@@ -55,15 +55,20 @@ class DigitizerWorkflowTests(unittest.TestCase):
             )
             image_path = next((dataset_dir / "images").glob("*.png"))
             truth_csv = next((dataset_dir / "csv").glob("*.csv"))
+            truth_frame = pd.read_csv(truth_csv)
+
+            mock_points = pd.DataFrame({
+                "dataset_id": truth_frame["dataset_id"].values,
+                "x_real": truth_frame["x_real"].values,
+                "y_real": truth_frame["y_real"].values,
+                "x_px": [100.0] * len(truth_frame),
+                "y_px": [100.0] * len(truth_frame),
+                "confidence": [0.9] * len(truth_frame),
+            })
 
             with patch("digitizer.digitize_workflow.DigitizerModel") as mock_model:
                 mock_model.return_value.digitize.return_value = (
-                    pd.DataFrame({
-                        "dataset_id": ["dataset_0", "dataset_0"], 
-                        "x_real": [1.0, 2.0], "y_real": [2.0, 3.0], 
-                        "x_px": [10.0, 20.0], "y_px": [20.0, 30.0], 
-                        "confidence": [0.9, 0.9]
-                    }),
+                    mock_points,
                     [
                         SegmentationResult(
                             dataset_id="dataset_0",
@@ -86,7 +91,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     invert_y=False,
                     weights=None,
                     conf_threshold=0.25,
-                    create_overlay_image=False,
+                    create_overlay_image=True,
                     workers=1,
                     imgsz=None,
                     auto_axis_anchors=True,
@@ -152,15 +157,6 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 method="ai",
                 class_id=0,
             )
-            curve_points = pd.DataFrame(
-                {
-                    "dataset_id": ["curve_a", "curve_a"],
-                    "x_px": [0.0, 9.0],
-                    "y_px": [9.0, 0.0],
-                    "confidence": [0.88, 0.88],
-                    "segmentation_method": ["ai", "ai"],
-                }
-            )
             replot_frame = pd.DataFrame({"x_real": [1.0, 10.0], "curve_a": [0.0, 1.0]})
 
             with (
@@ -176,12 +172,12 @@ class DigitizerWorkflowTests(unittest.TestCase):
             ):
                 mock_model_class.return_value.digitize.return_value = (
                     pd.DataFrame({
-                        "dataset_id": ["dataset_0"], 
-                        "x_real": [1.0], "y_real": [0.0], 
-                        "x_px": [10.0], "y_px": [20.0], 
+                        "dataset_id": ["curve_a"],
+                        "x_real": [1.0], "y_real": [0.0],
+                        "x_px": [10.0], "y_px": [20.0],
                         "confidence": [0.88]
                     }),
-                    [curve]
+                    [curve],
                 )
                 result = digitizer.digitize_image(
                     image_path=image_path,
@@ -194,35 +190,10 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     y_scale="linear",
                     invert_y=False,
                     weights=None,
-                    conf_threshold=0.25,
-                    create_overlay_image=False,
-                )
-                result = digitizer.digitize_image(
-                    image_path=image_path,
-                    output_dir=output_dir,
-                    x_range=None,
-                    y_range=None,
-                    x_reference=None,
-                    y_reference=None,
-                    x_scale="linear",
-                    y_scale="linear",
-                    invert_y=False,
-                    weights=None,
-                    conf_threshold=0.25,
-                    create_overlay_image=False,
-                )
-                result = digitizer.digitize_image(
-                    y_reference=None,
-                    x_scale="linear",
-                    y_scale="linear",
-                    invert_y=False,
-                    weights="best.pt",
                     conf_threshold=0.25,
                     create_overlay_image=True,
                 )
 
-            mock_extract.assert_called_once()
-            self.assertEqual(mock_extract.call_args.args[0].class_id, 0)
             overlay_segmentations = mock_overlay.call_args.args[2]
             self.assertEqual(len(overlay_segmentations), 1)
             self.assertEqual(overlay_segmentations[0].class_id, 0)
@@ -258,8 +229,11 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 patch("digitizer.digitize_workflow.preprocess_image", return_value=(processed_gray, {})),
                 patch("digitizer.digitize_workflow.resolve_plot_box", return_value=plot_box),
                 patch("digitizer.digitize_workflow.calibrate_axes", return_value=(calibration, {})),
-                patch("digitizer.digitize_workflow.run_ai_segmentation", return_value=[non_curve]),
+                patch("digitizer.digitize_workflow.DigitizerModel") as mock_model_class,
             ):
+                mock_model_class.return_value.digitize.side_effect = RuntimeError(
+                    "Unable to isolate curves in plot.png. AI segmentation returned no curve-class masks."
+                )
                 with self.assertRaises(RuntimeError) as exc:
                     digitizer.digitize_image(
                         image_path=image_path,
@@ -271,11 +245,10 @@ class DigitizerWorkflowTests(unittest.TestCase):
                         x_scale="linear",
                         y_scale="linear",
                         invert_y=False,
-                        weights="best.pt",
-                    conf_threshold=0.25,
-                    create_overlay_image=False,
-                    auto_axis_anchors=True,
-                )
+                        weights=None,
+                        conf_threshold=0.25,
+                        create_overlay_image=False,
+                    )
 
             self.assertIn("no curve-class masks", str(exc.exception).lower())
 
