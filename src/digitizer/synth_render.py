@@ -10,8 +10,14 @@ from skimage import measure, morphology
 
 from .constants import CURVE_MASK_PADDING_PIXELS, MAX_POLYGON_POINTS
 
-def _render_vbar_mask(fig_size: tuple[float, float], dpi: int, x_pos: float, y_range: tuple[float, float], 
-                      width: float, style: dict[str, Any]) -> np.ndarray:
+def _render_vbar_mask(
+    fig_size: tuple[float, float],
+    dpi: int,
+    x_pos: float,
+    y_range: tuple[float, float],
+    width: float,
+    style: dict[str, Any],
+) -> np.ndarray:
     """Render a vertical bar mask."""
     fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
     ax.set_facecolor("black")
