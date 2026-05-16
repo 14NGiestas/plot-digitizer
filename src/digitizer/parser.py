@@ -234,6 +234,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Execute the full curriculum pipeline. Without this flag, only prints the plan.",
     )
+    curriculum_parser.add_argument(
+        "--from-stage",
+        type=int,
+        choices=[1, 2, 3, 4],
+        default=None,
+        help="Resume from this stage number (1–4). Skips earlier stages and loads their trained weights.",
+    )
+    curriculum_parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Auto-resume from the last completed stage in --output-dir. Equivalent to --from-stage N.",
+    )
+    curriculum_parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Show progress status and weight chain without running anything.",
+    )
+    curriculum_parser.add_argument(
+        "--chain-info",
+        action="store_true",
+        help="Show the weight chain that will be used for each stage without running.",
+    )
+    curriculum_parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Scan existing checkpoints and create/update progress.json without running anything.",
+    )
 
     return parser
 

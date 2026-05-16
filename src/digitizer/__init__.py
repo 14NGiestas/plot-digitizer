@@ -233,6 +233,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "curriculum":
+        if args.status:
+            _show_curriculum_status(args.output_dir)
+            return 0
+        if args.chain_info:
+            _show_chain_info(
+                output_dir=args.output_dir,
+                from_stage=args.from_stage,
+                resume=args.resume,
+            )
+            return 0
+        if args.sync:
+            _sync_curriculum_progress(args.output_dir)
+            return 0
         _run_curriculum(
             output_dir=args.output_dir,
             samples_per_stage=args.samples_per_stage,
@@ -241,6 +254,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             batch=args.batch,
             workers=args.workers,
             execute=args.execute,
+            from_stage=args.from_stage,
+            resume=args.resume,
         )
         return 0
 
@@ -264,6 +279,8 @@ def _run_curriculum(
     batch: int,
     workers: int | None,
     execute: bool,
+    from_stage: int | None = None,
+    resume: bool = False,
 ) -> dict[str, Any]:
     """Run the full curriculum pipeline: generate, train, and fine-tune."""
     from .training import _load_hyp_overrides
@@ -278,38 +295,94 @@ def _run_curriculum(
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
 
+    progress_file = root / "progress.json"
+    progress: dict[str, Any] = {}
+    if progress_file.exists():
+        with open(progress_file) as f:
+            progress = json.load(f)
+        LOGGER.info("Loaded progress from %s: %s", progress_file, list(progress.keys()))
+
+    if resume:
+        for stage in reversed(stages):
+            key = stage["name"]
+            best_pt = root / key / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
+            if best_pt.exists() or (key in progress and progress[key].get("status") == "done"):
+                from_stage = stages.index(stage) + 2
+                LOGGER.info("Auto-resume: %s has checkpoint, starting from stage %d", key, from_stage)
+                break
+        if from_stage is None:
+            from_stage = 1
+
+    start_idx = (from_stage - 1) if from_stage is not None else 0
+    start_idx = max(0, min(start_idx, len(stages)))
+
     plan: dict[str, Any] = {
         "root": str(root),
         "samples_per_stage": samples_per_stage,
+        "start_stage": stages[start_idx]["name"] if start_idx < len(stages) else "interpret-finetune",
         "stages": [],
     }
 
-    weights = "yolo11s-seg.pt"
+    if start_idx == 0:
+        weights = "yolo11s-seg.pt"
+    else:
+        prev_stage = stages[start_idx - 1]
+        prev_pt = root / prev_stage["name"] / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
+        if prev_pt.exists():
+            weights = str(prev_pt)
+            LOGGER.info("✓ Chained weights from %s: %s", prev_stage["name"], weights)
+        else:
+            weights = "yolo11s-seg.pt"
+            LOGGER.warning(" No checkpoint for %s, falling back to base weights", prev_stage["name"])
 
-    for stage in stages:
-        stage_dir = root / stage["name"]
+    for i, stage in enumerate(stages):
+        stage_key = stage["name"]
+        stage_dir = root / stage_key
         data_dir = stage_dir / "data"
         train_dir = stage_dir / "train"
 
         stage_plan: dict[str, Any] = {
-            "name": stage["name"],
+            "name": stage_key,
             "difficulty": stage["difficulty"],
             "data_dir": str(data_dir),
             "train_dir": str(train_dir),
             "weights": weights,
         }
 
+        if i < start_idx:
+            if stage_key in progress:
+                stage_plan["status"] = "skipped (already done)"
+                stage_plan["weights"] = progress[stage_key].get("weights", weights)
+            else:
+                stage_plan["status"] = "skipped (before start)"
+            plan["stages"].append(stage_plan)
+            continue
+
+        if stage_key in progress and progress[stage_key].get("status") == "done" and not from_stage:
+            LOGGER.info("✓ %s already completed, skipping", stage_key)
+            stage_plan["status"] = "skipped (already done)"
+            stage_plan["weights"] = progress[stage_key].get("weights", weights)
+            plan["stages"].append(stage_plan)
+            continue
+
         if execute:
-            LOGGER.info("Generating %d samples for %s (difficulty %d)...", samples_per_stage, stage["name"], stage["difficulty"])
-            generate_synthetic_dataset(
-                output_dir=data_dir,
-                count=samples_per_stage,
-                seed=seed + stage["difficulty"],
-                image_format="png",
-                plot_type="mixed",
-                workers=workers,
-                difficulty=stage["difficulty"],
-            )
+            LOGGER.info("━━━ %s (difficulty %d) ━━━", stage_key.upper(), stage["difficulty"])
+            LOGGER.info("  Input weights: %s", weights)
+
+            if data_dir.exists() and (data_dir / "dataset.yaml").exists():
+                LOGGER.info("  ✓ Data exists, skipping generation")
+            else:
+                LOGGER.info("  → Generating %d samples...", samples_per_stage)
+                generate_synthetic_dataset(
+                    output_dir=data_dir,
+                    count=samples_per_stage,
+                    seed=seed + stage["difficulty"],
+                    image_format="png",
+                    plot_type="mixed",
+                    workers=workers,
+                    difficulty=stage["difficulty"],
+                )
+                LOGGER.info("  ✓ Generation complete")
 
             hyp_yaml = stage["hyp"]
             hyp_overrides = _load_hyp_overrides(hyp_yaml if hyp_yaml.exists() else None)
@@ -318,7 +391,7 @@ def _run_curriculum(
             stage_batch = hyp_overrides.pop("batch", batch)
             stage_imgsz = hyp_overrides.pop("imgsz", 640)
 
-            LOGGER.info("Training %s for %d epochs (imgsz=%d, batch=%d)...", stage["name"], stage_epochs, stage_imgsz, stage_batch)
+            LOGGER.info("  → Training: %d epochs, imgsz=%d, batch=%d", stage_epochs, stage_imgsz, stage_batch)
             run_training(
                 dataset_dir=data_dir,
                 output_dir=train_dir,
@@ -334,19 +407,30 @@ def _run_curriculum(
             best_pt = train_dir / "synthetic_plot_digitizer" / "weights" / "best.pt"
             if best_pt.exists():
                 weights = str(best_pt)
+                LOGGER.info("  ✓ Output weights: %s", weights)
             else:
                 weights_dir = train_dir / "synthetic_plot_digitizer" / "weights"
                 if weights_dir.exists():
                     pts = list(weights_dir.glob("*.pt"))
                     if pts:
                         weights = str(pts[0])
+                        LOGGER.info("  ✓ Output weights (fallback): %s", weights)
 
             stage_plan["result_weights"] = weights
+            stage_plan["status"] = "done"
+
+            progress[stage_key] = {
+                "status": "done",
+                "weights": weights,
+                "difficulty": stage["difficulty"],
+            }
+            with open(progress_file, "w") as f:
+                json.dump(progress, f, indent=2, default=_json_default)
 
         plan["stages"].append(stage_plan)
 
     if execute:
-        LOGGER.info("Fine-tuning interpretation heads...")
+        LOGGER.info("━━━ INTERPRETATION FINE-TUNE ━━")
         from .training.interpret_finetune import fine_tune_interpretation_heads
 
         final_stage = stages[-1]
@@ -363,5 +447,170 @@ def _run_curriculum(
         )
         plan["interpret_finetune"] = str(interpret_dir)
 
+        progress["interpret_finetune"] = {"status": "done", "weights": weights}
+        with open(progress_file, "w") as f:
+            json.dump(progress, f, indent=2, default=_json_default)
+
     print(json.dumps(plan, indent=2, default=_json_default))
     return plan
+
+
+def _show_curriculum_status(output_dir: Path) -> None:
+    """Print a human-readable progress report."""
+    root = Path(output_dir)
+    progress_file = root / "progress.json"
+
+    stages = [
+        {"difficulty": 1, "name": "stage1"},
+        {"difficulty": 2, "name": "stage2"},
+        {"difficulty": 3, "name": "stage3"},
+        {"difficulty": 4, "name": "stage4"},
+    ]
+
+    progress: dict[str, Any] = {}
+    if progress_file.exists():
+        with open(progress_file) as f:
+            progress = json.load(f)
+
+    print(f"\n Curriculum Progress: {output_dir}")
+    print("=" * 60)
+
+    for stage in stages:
+        key = stage["name"]
+        best_pt = root / key / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
+        data_exists = (root / key / "data" / "dataset.yaml").exists()
+
+        if key in progress and progress[key].get("status") == "done":
+            status = "DONE"
+            marker = "✓"
+        elif best_pt.exists():
+            status = "DONE (checkpoint found)"
+            marker = "✓"
+        elif data_exists:
+            status = "data generated, not trained"
+            marker = "·"
+        else:
+            status = "not started"
+            marker = " "
+
+        wsize = ""
+        if best_pt.exists():
+            wsize = f" ({best_pt.stat().st_size / 1e6:.1f} MB)"
+
+        print(f"  {marker} {key.upper()} (diff {stage['difficulty']})  [{status}]{wsize}")
+
+    interp_pt = root / "interpret-finetune" / "best.pt"
+    if interp_pt.exists():
+        print(f"  ✓ INTERPRET-FINETUNE  [DONE] ({interp_pt.stat().st_size / 1e6:.1f} MB)")
+    else:
+        print(f"    INTERPRET-FINETUNE  [not started]")
+
+    print("=" * 60)
+
+    if progress_file.exists():
+        print(f"  Progress file: {progress_file}")
+    else:
+        print("  No progress file found — run with --execute to create one.")
+    print()
+
+
+def _show_chain_info(output_dir: Path, from_stage: int | None = None, resume: bool = False) -> None:
+    """Print the weight chain that will be used."""
+    root = Path(output_dir)
+    progress_file = root / "progress.json"
+
+    stages = [
+        {"difficulty": 1, "name": "stage1"},
+        {"difficulty": 2, "name": "stage2"},
+        {"difficulty": 3, "name": "stage3"},
+        {"difficulty": 4, "name": "stage4"},
+    ]
+
+    progress: dict[str, Any] = {}
+    if progress_file.exists():
+        with open(progress_file) as f:
+            progress = json.load(f)
+
+    if resume:
+        for stage in reversed(stages):
+            key = stage["name"]
+            best_pt = root / key / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
+            if best_pt.exists() or (key in progress and progress[key].get("status") == "done"):
+                from_stage = stages.index(stage) + 2
+                break
+        if from_stage is None:
+            from_stage = 1
+
+    start_idx = (from_stage - 1) if from_stage is not None else 0
+    start_idx = max(0, min(start_idx, len(stages)))
+
+    print(f"\n Weight Chain: {output_dir}")
+    print("=" * 70)
+
+    if start_idx == 0:
+        weights = "yolo11s-seg.pt (base)"
+    else:
+        prev = stages[start_idx - 1]
+        prev_pt = root / prev["name"] / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
+        if prev_pt.exists():
+            weights = str(prev_pt)
+        else:
+            weights = "yolo11s-seg.pt (base, fallback)"
+
+    for i, stage in enumerate(stages):
+        marker = "→" if i == start_idx else " "
+        if i < start_idx:
+            marker = "✓"
+        print(f"  {marker} {stage['name'].upper():10s}  input: {weights}")
+
+        best_pt = root / stage["name"] / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
+        if best_pt.exists():
+            weights = str(best_pt)
+            print(f"             output: {weights}")
+        else:
+            print(f"             output: (will train → {stage['name']}/train/.../best.pt)")
+            weights = f"({stage['name']}/train/.../best.pt)"
+
+    print("=" * 70)
+    print()
+
+
+def _sync_curriculum_progress(output_dir: Path) -> None:
+    """Scan checkpoints and create/update progress.json."""
+    root = Path(output_dir)
+    progress_file = root / "progress.json"
+
+    stages = [
+        {"difficulty": 1, "name": "stage1"},
+        {"difficulty": 2, "name": "stage2"},
+        {"difficulty": 3, "name": "stage3"},
+        {"difficulty": 4, "name": "stage4"},
+    ]
+
+    progress: dict[str, Any] = {}
+    if progress_file.exists():
+        with open(progress_file) as f:
+            progress = json.load(f)
+
+    changed = False
+    for stage in stages:
+        key = stage["name"]
+        best_pt = root / key / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
+        if best_pt.exists() and key not in progress:
+            progress[key] = {
+                "status": "done",
+                "weights": str(best_pt),
+                "difficulty": stage["difficulty"],
+                "synced": True,
+            }
+            changed = True
+            LOGGER.info("  ✓ Synced %s → %s", key, best_pt)
+
+    if changed:
+        with open(progress_file, "w") as f:
+            json.dump(progress, f, indent=2, default=_json_default)
+        LOGGER.info("Progress file updated: %s", progress_file)
+    else:
+        LOGGER.info("No new checkpoints found. Progress file unchanged.")
+
+    _show_curriculum_status(output_dir)
