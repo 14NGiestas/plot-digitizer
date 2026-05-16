@@ -7,7 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .constants import COLOR_INVERT_PROBABILITY, LOGGER
+from ..constants import COLOR_INVERT_PROBABILITY, LOGGER
 
 
 def _apply_degradation_filters(

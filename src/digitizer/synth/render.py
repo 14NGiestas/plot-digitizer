@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from skimage import measure, morphology
 
-from .constants import CURVE_MASK_PADDING_PIXELS, MAX_POLYGON_POINTS
+from ..constants import CURVE_MASK_PADDING_PIXELS, MAX_POLYGON_POINTS
 
 def _render_vbar_mask(
     fig_size: tuple[float, float],

@@ -10,6 +10,9 @@ from typing import Any, Sequence
 import numpy as np
 
 from . import synthetic as _synthetic
+# Import to register custom modules
+from .layers import __init__
+
 from .ai_segmentation import run_ai_segmentation
 from .axis_parsing import _resolve_bounds_from_references, parse_range, parse_reference_pair
 from .calibration import calibrate_axes, detect_axis_anchor_pixels

@@ -9,15 +9,17 @@ from pathlib import Path
 
 import pandas as pd
 
-from .ai_segmentation import run_ai_segmentation
+from .ai_segmentation import run_ai_segmentation, _select_digitization_segmentations
 from .annotation_io import CLASS_MAPPING
+from .model_wrapper import DigitizerModel
+from .image_ops import load_image, preprocess_image, resolve_plot_box
 from .calibration import calibrate_axes
 from .constants import LOGGER
 from .image_ops import load_image, preprocess_image, resolve_plot_box
 from .models import AxisReferencePair, DigitizeResult, SegmentationResult
 from .plotting import build_replot_frame, create_overlay, create_replot
 from .points import convert_points, extract_curve_points
-from .synth_render import _mask_to_yolo_polygon
+from .synth.render import _mask_to_yolo_polygon
 
 
 def _segmentations_to_yolo_label(
@@ -112,48 +114,11 @@ def digitize_image(
         auto_axis_anchors=auto_axis_anchors,
     )
 
-    segmentations = run_ai_segmentation(
-        image,
-        plot_box,
-        weights,
-        conf_threshold,
-        workers=workers,
-        imgsz=imgsz,
+    # Use the wrapper to perform AI segmentation and conversion
+    model = DigitizerModel(weights, conf_threshold)
+    converted, segmentations = model.digitize(
+        image, plot_box, calibration, image_path, workers=workers or 1, imgsz=imgsz
     )
-    import os
-    if not segmentations and os.getenv("PLOT_DIGITIZER_SMOKE_TEST") == "1":
-        from .cv_segmentation import run_cv_segmentation
-        segmentations = run_cv_segmentation(image, plot_box)
-
-    if segmentations:
-        filtered_segmentations = _select_digitization_segmentations(segmentations)
-        ignored_detection_count = len(segmentations) - len(filtered_segmentations)
-        if ignored_detection_count:
-            LOGGER.info(
-                "Ignoring %s non-curve AI detection(s) for %s during point extraction.",
-                ignored_detection_count,
-                image_path.name,
-            )
-        segmentations = filtered_segmentations
-    if not segmentations:
-        raise RuntimeError(
-            f"Unable to isolate curves in {image_path}. "
-            "AI segmentation returned no curve-class masks."
-        )
-
-    point_frames: list[pd.DataFrame] = []
-    for segmentation in segmentations:
-        frame = extract_curve_points(segmentation, plot_box)
-        if frame.empty:
-            continue
-        point_frames.append(frame)
-    if not point_frames:
-        raise RuntimeError(f"No digitized points were extracted from {image_path}.")
-    combined = pd.concat(point_frames, ignore_index=True)
-    combined = combined.dropna().sort_values(["dataset_id", "x_px"]).reset_index(drop=True)
-    converted = convert_points(combined, calibration, plot_box)
-    if converted.empty:
-        raise RuntimeError(f"No digitized points were extracted from {image_path}.")
 
     # Build output paths under the unified subdirectory structure.
     dest_image = images_dir / image_path.name

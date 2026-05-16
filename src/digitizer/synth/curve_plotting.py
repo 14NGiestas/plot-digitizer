@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from .constants import (
+from ..constants import (
     BASE_CURVE_COUNT_RANGE,
     CURVE_LINEWIDTH_PROBABILITIES,
     CURVE_LINEWIDTHS,
@@ -17,8 +17,8 @@ from .constants import (
     GRID_ALPHA,
     GRID_ENABLED_PROBABILITY,
 )
-from .synth_curves import _generate_bandstructure_curves, _random_curve
-from .synth_render import _mask_to_yolo_polygon
+from .curves import _generate_bandstructure_curves, _random_curve
+from .render import _mask_to_yolo_polygon
 
 
 def _style_axis_text(ax: Any, rng: np.random.Generator, title: str, xlabel: str, ylabel: str) -> None:

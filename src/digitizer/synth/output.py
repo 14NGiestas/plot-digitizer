@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .annotation_io import CLASS_MAPPING, annotation_to_yolo_line
+from ..annotation_io import CLASS_MAPPING, annotation_to_yolo_line
 
 
 def _build_frame_annotations(plot_box: dict[str, int]) -> list[dict[str, Any]]:

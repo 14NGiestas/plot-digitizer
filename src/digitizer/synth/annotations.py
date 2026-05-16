@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from .constants import (
+from ..constants import (
     ARROW_COUNT_RANGE,
     ARROW_LABEL_PROBABILITY,
     ARROW_LABEL_TEXTS,
@@ -14,7 +14,7 @@ from .constants import (
     HBAR_COUNT_RANGE,
     VBAR_COUNT_RANGE,
 )
-from .synth_render import _mask_to_yolo_polygon
+from .render import _mask_to_yolo_polygon
 
 
 def _add_annotation_layers(

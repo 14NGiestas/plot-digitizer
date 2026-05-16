@@ -10,9 +10,9 @@ from pathlib import Path
 
 import numpy as np
 
-from .annotation_io import CLASS_MAPPING
-from .constants import DEFAULT_GENERATE_WORKERS_CAP
-from .synth_example import _write_synthetic_example
+from ..annotation_io import CLASS_MAPPING
+from ..constants import DEFAULT_GENERATE_WORKERS_CAP
+from .example import _write_synthetic_example
 
 _NAMES_BY_ID = {class_id: name for name, class_id in CLASS_MAPPING.items()}
 if sorted(_NAMES_BY_ID.keys()) != list(range(len(_NAMES_BY_ID))):

@@ -34,6 +34,7 @@ from digitizer.annotation_io import (
     scale_annotation_points,
 )
 from digitizer.parser import build_parser
+from digitizer.models import SegmentationResult
 
 
 class DigitizerWorkflowTests(unittest.TestCase):
@@ -55,7 +56,24 @@ class DigitizerWorkflowTests(unittest.TestCase):
             image_path = next((dataset_dir / "images").glob("*.png"))
             truth_csv = next((dataset_dir / "csv").glob("*.csv"))
 
-            with patch("digitizer.digitize_workflow.run_ai_segmentation", side_effect=lambda img, box, w, c, workers=None, imgsz=None: digitizer.cv_segmentation.run_cv_segmentation(img, box)):
+            with patch("digitizer.digitize_workflow.DigitizerModel") as mock_model:
+                mock_model.return_value.digitize.return_value = (
+                    pd.DataFrame({
+                        "dataset_id": ["dataset_0", "dataset_0"], 
+                        "x_real": [1.0, 2.0], "y_real": [2.0, 3.0], 
+                        "x_px": [10.0, 20.0], "y_px": [20.0, 30.0], 
+                        "confidence": [0.9, 0.9]
+                    }),
+                    [
+                        SegmentationResult(
+                            dataset_id="dataset_0",
+                            mask=np.ones((588, 840), dtype=bool),
+                            confidence=0.9,
+                            method="ai",
+                            class_id=0,
+                        )
+                    ]
+                )
                 result = digitizer.digitize_image(
                     image_path=image_path,
                     output_dir=output_dir,
@@ -66,9 +84,12 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     x_scale="linear",
                     y_scale="linear",
                     invert_y=False,
-                    weights="dummy.pt",
+                    weights=None,
                     conf_threshold=0.25,
-                    create_overlay_image=True,
+                    create_overlay_image=False,
+                    workers=1,
+                    imgsz=None,
+                    auto_axis_anchors=True,
                 )
 
             self.assertTrue(result.csv_path.exists())
@@ -147,19 +168,50 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 patch("digitizer.digitize_workflow.preprocess_image", return_value=(processed_gray, {})),
                 patch("digitizer.digitize_workflow.resolve_plot_box", return_value=plot_box),
                 patch("digitizer.digitize_workflow.calibrate_axes", return_value=(calibration, {})),
-                patch("digitizer.digitize_workflow.run_ai_segmentation", return_value=[non_curve, curve]),
-                patch("digitizer.digitize_workflow.extract_curve_points", return_value=curve_points) as mock_extract,
+                patch("digitizer.digitize_workflow.DigitizerModel") as mock_model_class,
                 patch("digitizer.digitize_workflow.build_replot_frame", return_value=replot_frame),
                 patch("digitizer.digitize_workflow.create_replot"),
                 patch("digitizer.digitize_workflow.create_overlay") as mock_overlay,
                 patch("digitizer.digitize_workflow._segmentations_to_yolo_label", return_value="0 0.1 0.1 0.9 0.9"),
             ):
+                mock_model_class.return_value.digitize.return_value = (
+                    pd.DataFrame({
+                        "dataset_id": ["dataset_0"], 
+                        "x_real": [1.0], "y_real": [0.0], 
+                        "x_px": [10.0], "y_px": [20.0], 
+                        "confidence": [0.88]
+                    }),
+                    [curve]
+                )
                 result = digitizer.digitize_image(
                     image_path=image_path,
                     output_dir=output_dir,
                     x_range=None,
                     y_range=None,
                     x_reference=None,
+                    y_reference=None,
+                    x_scale="linear",
+                    y_scale="linear",
+                    invert_y=False,
+                    weights=None,
+                    conf_threshold=0.25,
+                    create_overlay_image=False,
+                )
+                result = digitizer.digitize_image(
+                    image_path=image_path,
+                    output_dir=output_dir,
+                    x_range=None,
+                    y_range=None,
+                    x_reference=None,
+                    y_reference=None,
+                    x_scale="linear",
+                    y_scale="linear",
+                    invert_y=False,
+                    weights=None,
+                    conf_threshold=0.25,
+                    create_overlay_image=False,
+                )
+                result = digitizer.digitize_image(
                     y_reference=None,
                     x_scale="linear",
                     y_scale="linear",
@@ -220,9 +272,10 @@ class DigitizerWorkflowTests(unittest.TestCase):
                         y_scale="linear",
                         invert_y=False,
                         weights="best.pt",
-                        conf_threshold=0.25,
-                        create_overlay_image=False,
-                    )
+                    conf_threshold=0.25,
+                    create_overlay_image=False,
+                    auto_axis_anchors=True,
+                )
 
             self.assertIn("no curve-class masks", str(exc.exception).lower())
 
@@ -1535,7 +1588,7 @@ class CurriculumAndNewFeaturesTests(unittest.TestCase):
         """_apply_degradation_filters with intensity='heavy' and rng state that
         triggers only inversion should produce a pixel-inverted image."""
         import cv2 as _cv2
-        from digitizer.synth_degrade import _apply_degradation_filters
+        from digitizer.synth.degrade import _apply_degradation_filters
         with tempfile.TemporaryDirectory() as tmp:
             img_path = Path(tmp) / "test.png"
             original = np.full((50, 50, 3), 200, dtype=np.uint8)
@@ -1583,7 +1636,7 @@ class CurriculumAndNewFeaturesTests(unittest.TestCase):
     def test_apply_degradation_filters_intensity_none_leaves_image_unchanged(self) -> None:
         """intensity='none' must not modify the image at all."""
         import cv2 as _cv2
-        from digitizer.synth_degrade import _apply_degradation_filters
+        from digitizer.synth.degrade import _apply_degradation_filters
         with tempfile.TemporaryDirectory() as tmp:
             img_path = Path(tmp) / "test.png"
             original = np.full((40, 40, 3), 128, dtype=np.uint8)
