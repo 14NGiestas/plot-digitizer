@@ -113,6 +113,12 @@ def build_parser() -> argparse.ArgumentParser:
     digitize_parser.add_argument("--weights", default=None, help="YOLO .pt or .onnx segmentation weights.")
     digitize_parser.add_argument("--conf-threshold", type=float, default=0.25)
     digitize_parser.add_argument(
+        "--imgsz",
+        type=_parse_positive_int,
+        default=None,
+        help="Optional inference image size. If not provided, YOLO defaults to the size used during training.",
+    )
+    digitize_parser.add_argument(
         "--workers",
         type=_parse_positive_int,
         default=None,

@@ -175,6 +175,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 conf_threshold=args.conf_threshold,
                 create_overlay_image=args.overlay,
                 workers=1, # internal workers set to 1 since we parallelize across images
+                imgsz=args.imgsz,
                 auto_axis_anchors=not args.disable_auto_axis_anchors,
             )
             return {

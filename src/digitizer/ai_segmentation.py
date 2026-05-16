@@ -16,6 +16,7 @@ def run_ai_segmentation(
     weights: str | None,
     conf_threshold: float,
     workers: int | None = None,
+    imgsz: int | None = None,
 ) -> list[SegmentationResult]:
     """Run YOLO segmentation if weights are available."""
     if not weights:
@@ -30,6 +31,8 @@ def run_ai_segmentation(
     predict_kwargs: dict[str, Any] = {"conf": conf_threshold, "verbose": False}
     if workers is not None:
         predict_kwargs["workers"] = workers
+    if imgsz is not None:
+        predict_kwargs["imgsz"] = imgsz
     predictions = model.predict(image, **predict_kwargs)
     results: list[SegmentationResult] = []
     if not predictions:

@@ -2,8 +2,8 @@
 # Use with: digitizer train --hyp-yaml runs/curriculum_stage4.yml --execute
 
 model: yolo11s-seg.pt
-imgsz: 832
-batch: 6
+imgsz: 1024
+batch: 16
 epochs: 90
 
 optimizer: AdamW

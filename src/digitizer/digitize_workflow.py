@@ -73,6 +73,7 @@ def digitize_image(
     conf_threshold: float,
     create_overlay_image: bool,
     workers: int | None = None,
+    imgsz: int | None = None,
     auto_axis_anchors: bool = True,
 ) -> DigitizeResult:
     """Digitize a single image and write artifacts under *output_dir*.
@@ -117,6 +118,7 @@ def digitize_image(
         weights,
         conf_threshold,
         workers=workers,
+        imgsz=imgsz,
     )
     import os
     if not segmentations and os.getenv("PLOT_DIGITIZER_SMOKE_TEST") == "1":
