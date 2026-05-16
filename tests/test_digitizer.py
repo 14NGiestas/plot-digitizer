@@ -240,6 +240,32 @@ class DigitizerWorkflowTests(unittest.TestCase):
         self.assertGreater(mask.mean(), 0.001)
         self.assertLess(mask.mean(), 0.2)
 
+    def test_render_curve_mask_padding_expands_training_region(self) -> None:
+        x_values = np.linspace(0.0, 10.0, 200)
+        y_values = np.sin(x_values)
+        base_mask = digitizer._render_curve_mask(
+            fig_size=(4.0, 3.0),
+            dpi=100,
+            x_values=x_values,
+            y_values=y_values,
+            x_range=(0.0, 10.0),
+            y_range=(-1.5, 1.5),
+            style={"linewidth": 1.2, "linestyle": "-"},
+            curve_mask_padding_pixels=0,
+        )
+        padded_mask = digitizer._render_curve_mask(
+            fig_size=(4.0, 3.0),
+            dpi=100,
+            x_values=x_values,
+            y_values=y_values,
+            x_range=(0.0, 10.0),
+            y_range=(-1.5, 1.5),
+            style={"linewidth": 1.2, "linestyle": "-"},
+            curve_mask_padding_pixels=2,
+        )
+        self.assertGreater(padded_mask.sum(), base_mask.sum())
+        self.assertTrue(np.all(~base_mask | padded_mask))
+
     def test_build_replot_frame_uses_log_grid_for_log_x_scale(self) -> None:
         points = pd.DataFrame(
             {

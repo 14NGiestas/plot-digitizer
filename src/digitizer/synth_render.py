@@ -6,9 +6,9 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
-from skimage import measure
+from skimage import measure, morphology
 
-from .constants import MAX_POLYGON_POINTS
+from .constants import CURVE_MASK_PADDING_PIXELS, MAX_POLYGON_POINTS
 
 def _render_vbar_mask(fig_size: tuple[float, float], dpi: int, x_pos: float, y_range: tuple[float, float], 
                       width: float, style: dict[str, Any]) -> np.ndarray:
@@ -90,6 +90,7 @@ def _render_curve_mask(
     y_range: tuple[float, float],
     style: dict[str, Any],
     x_scale: str = "linear",
+    curve_mask_padding_pixels: int = CURVE_MASK_PADDING_PIXELS,
 ) -> np.ndarray:
     fig, ax = plt.subplots(figsize=fig_size, dpi=dpi, facecolor="black")
     ax.set_facecolor("black")
@@ -101,7 +102,10 @@ def _render_curve_mask(
     fig.canvas.draw()
     buffer = np.asarray(fig.canvas.buffer_rgba())
     plt.close(fig)
-    return np.max(buffer[:, :, :3], axis=2) > 200
+    mask = np.max(buffer[:, :, :3], axis=2) > 200
+    if curve_mask_padding_pixels > 0:
+        mask = morphology.dilation(mask, morphology.disk(curve_mask_padding_pixels))
+    return mask
 
 
 def _mask_to_yolo_polygon(mask: np.ndarray) -> list[float]:
@@ -115,4 +119,3 @@ def _mask_to_yolo_polygon(mask: np.ndarray) -> list[float]:
     for y_coord, x_coord in contour[::step]:
         polygon.extend([float(np.clip(x_coord / width, 0.0, 1.0)), float(np.clip(y_coord / height, 0.0, 1.0))])
     return polygon if len(polygon) >= 6 else []
-
