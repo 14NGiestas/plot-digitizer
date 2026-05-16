@@ -1,7 +1,7 @@
 # Curriculum Stage 1 (easy): learn clean/simple curves first.
 # Use with: digitizer train --hyp-yaml runs/curriculum_stage1.yml --execute
 
-model: yolov8n-seg.pt
+model: yolo11s-seg.pt
 imgsz: 640
 batch: 8
 epochs: 40

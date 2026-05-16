@@ -1,7 +1,7 @@
 # Curriculum Stage 2 (medium-easy): introduce basic bars/annotations.
 # Use with: digitizer train --hyp-yaml runs/curriculum_stage2.yml --execute
 
-model: yolov8n-seg.pt
+model: yolo11s-seg.pt
 imgsz: 704
 batch: 8
 epochs: 50

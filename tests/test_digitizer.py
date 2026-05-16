@@ -589,7 +589,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                         output_dir=output_dir,
                         epochs=1,
                         imgsz=640,
-                        weights="yolo11n-seg.pt",
+                        weights="yolo11s-seg.pt",
                         batch=1,
                         execute=True,
                     )
@@ -631,7 +631,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                         output_dir=output_dir,
                         epochs=1,
                         imgsz=640,
-                        weights="yolo11n-seg.pt",
+                        weights="yolo11s-seg.pt",
                         batch=1,
                         execute=True,
                     )
@@ -656,7 +656,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 output_dir=output_dir,
                 epochs=5,
                 imgsz=640,
-                weights="yolo11n-seg.pt",
+                weights="yolo11s-seg.pt",
                 batch=2,
                 execute=False,
                 hyp_yaml=hyp_yaml,
@@ -705,7 +705,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     output_dir=output_dir,
                     epochs=1,
                     imgsz=640,
-                    weights="yolo11n-seg.pt",
+                    weights="yolo11s-seg.pt",
                     batch=1,
                     execute=True,
                     workers=16,
@@ -1232,7 +1232,7 @@ class TrainingAmpTests(unittest.TestCase):
             plan = digitizer.run_training(
                 dataset_dir=dataset_dir,
                 output_dir=Path(tmp) / "runs",
-                epochs=1, imgsz=320, weights="yolo11n-seg.pt", batch=1, execute=False,
+                epochs=1, imgsz=320, weights="yolo11s-seg.pt", batch=1, execute=False,
             )
             self.assertFalse(plan["amp"])
 
@@ -1245,7 +1245,7 @@ class TrainingAmpTests(unittest.TestCase):
             plan = digitizer.run_training(
                 dataset_dir=dataset_dir,
                 output_dir=Path(tmp) / "runs",
-                epochs=1, imgsz=320, weights="yolo11n-seg.pt", batch=1, execute=False,
+                epochs=1, imgsz=320, weights="yolo11s-seg.pt", batch=1, execute=False,
                 amp=True,
             )
             self.assertTrue(plan["amp"])

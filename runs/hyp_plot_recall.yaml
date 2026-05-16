@@ -1,4 +1,4 @@
-model: yolov8s-seg.pt
+model: yolo11s-seg.pt
 imgsz: 768
 amp: False
 batch: 32

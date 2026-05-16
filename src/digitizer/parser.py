@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser = subparsers.add_parser("train", help="Train or plan a YOLO segmentation model.")
     train_parser.add_argument("--dataset-dir", type=Path, required=True)
     train_parser.add_argument("--output-dir", type=Path, default=Path("training-runs"))
-    train_parser.add_argument("--weights", default="yolov8n-seg.pt")
+    train_parser.add_argument("--weights", default="yolo11s-seg.pt")
     train_parser.add_argument("--epochs", type=int, default=25)
     train_parser.add_argument("--imgsz", type=int, default=640)
     train_parser.add_argument("--batch", type=int, default=8)

@@ -85,7 +85,7 @@ Use them with `--hyp-yaml`:
 digitizer train \
   --dataset-dir synthetic-stage1 \
   --output-dir training-runs-stage1 \
-  --weights yolov8n-seg.pt \
+  --weights yolo11s-seg.pt \
   --hyp-yaml runs/curriculum_stage1.yml \
   --execute
 

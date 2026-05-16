@@ -44,7 +44,7 @@ jobs:
           set -euo pipefail
           tmpdir="$(mktemp -d)"
           nix run . -- generate --output-dir "$tmpdir/synthetic" --count 1 --seed 1 --plot-type general --image-format png
-          nix run . -- train --dataset-dir "$tmpdir/synthetic" --output-dir "$tmpdir/training" --weights yolov8n-seg.pt --epochs 1 --batch 1
+          nix run . -- train --dataset-dir "$tmpdir/synthetic" --output-dir "$tmpdir/training" --weights yolo11s-seg.pt --epochs 1 --batch 1
           image_path="$(find "$tmpdir/synthetic/images" -maxdepth 1 -name '*.png' -print -quit)"
           [ -n "$image_path" ] || { echo "No generated image found"; exit 1; }
           nix run . -- digitize "$image_path" --output-dir "$tmpdir/digitized" --x-range 0:10 --y-range 0:1
