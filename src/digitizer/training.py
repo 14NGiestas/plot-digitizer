@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,35 @@ from .constants import LOGGER
 
 _KEYS_TO_STRIP = {"model", "nc", "names", "scales", "backbone", "head"}
 _KEYS_ALREADY_PASSED = {"data", "task", "epochs", "imgsz", "batch", "project", "name", "amp", "workers"}
+
+TRAIN_RUN_NAME = "seg"
+
+
+def _find_latest_run_dir(project_dir: Path, base_name: str = TRAIN_RUN_NAME) -> Path | None:
+    """Find the latest Ultralytics training run directory under *project_dir*.
+
+    Ultralytics appends a numeric suffix when a run with the same name already
+    exists (e.g. ``seg``, ``seg2``, ``seg3``).  This helper returns the path
+    to the directory with the highest suffix that actually contains weights.
+    """
+    if not project_dir.is_dir():
+        return None
+
+    candidates: list[tuple[int, Path]] = []
+    for entry in project_dir.iterdir():
+        if not entry.is_dir():
+            continue
+        m = re.match(rf"^{re.escape(base_name)}(\d*)$", entry.name)
+        if m:
+            suffix = int(m.group(1)) if m.group(1) else 1
+            weights_dir = entry / "weights"
+            if weights_dir.is_dir() and any(weights_dir.glob("*.pt")):
+                candidates.append((suffix, entry))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
 
 
 def _load_hyp_overrides(hyp_yaml: Path | None) -> dict[str, Any]:
@@ -103,7 +133,7 @@ def run_training(
             "imgsz": imgsz,
             "batch": batch,
             "project": str(output_dir),
-            "name": "synthetic_plot_digitizer",
+            "name": TRAIN_RUN_NAME,
             "amp": amp,
         }
         if workers is not None:
@@ -111,6 +141,7 @@ def run_training(
         for key, value in hyp_overrides.items():
             if key not in _KEYS_ALREADY_PASSED:
                 train_kwargs[key] = value
-        training_plan["result"] = model.train(**train_kwargs).save_dir.as_posix()
+        result = model.train(**train_kwargs)
+        training_plan["result"] = result.save_dir.as_posix()
     return training_plan
 

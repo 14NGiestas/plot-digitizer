@@ -271,6 +271,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 2
 
 
+def _find_stage_weights(train_dir: Path) -> str | None:
+    """Find the best.pt in the latest Ultralytics run under *train_dir*.
+
+    Handles Ultralytics auto-incremented names (seg, seg2, seg3, …) and
+    the legacy name ``synthetic_plot_digitizer`` from earlier runs.
+    Returns the path to best.pt or None if not found.
+    """
+    from .training import _find_latest_run_dir, TRAIN_RUN_NAME
+
+    # Try current name first
+    run_dir = _find_latest_run_dir(train_dir, TRAIN_RUN_NAME)
+    if run_dir is None:
+        # Fallback: legacy name
+        run_dir = _find_latest_run_dir(train_dir, "synthetic_plot_digitizer")
+    if run_dir is None:
+        return None
+    best_pt = run_dir / "weights" / "best.pt"
+    if best_pt.exists():
+        return str(best_pt)
+    return None
+
+
 def _run_curriculum(
     output_dir: Path,
     samples_per_stage: int,
@@ -305,8 +327,9 @@ def _run_curriculum(
     if resume:
         for stage in reversed(stages):
             key = stage["name"]
-            best_pt = root / key / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
-            if best_pt.exists() or (key in progress and progress[key].get("status") == "done"):
+            train_dir = root / key / "train"
+            found_pt = _find_stage_weights(train_dir)
+            if found_pt or (key in progress and progress[key].get("status") == "done"):
                 from_stage = stages.index(stage) + 2
                 LOGGER.info("Auto-resume: %s has checkpoint, starting from stage %d", key, from_stage)
                 break
@@ -327,9 +350,9 @@ def _run_curriculum(
         weights = "yolo11s-seg.pt"
     else:
         prev_stage = stages[start_idx - 1]
-        prev_pt = root / prev_stage["name"] / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
-        if prev_pt.exists():
-            weights = str(prev_pt)
+        prev_pt = _find_stage_weights(root / prev_stage["name"] / "train")
+        if prev_pt:
+            weights = prev_pt
             LOGGER.info("✓ Chained weights from %s: %s", prev_stage["name"], weights)
         else:
             weights = "yolo11s-seg.pt"
@@ -358,12 +381,21 @@ def _run_curriculum(
             plan["stages"].append(stage_plan)
             continue
 
-        if stage_key in progress and progress[stage_key].get("status") == "done" and not from_stage:
+        # Skip if fully completed (progress.json says done AND checkpoint exists)
+        has_checkpoint = _find_stage_weights(train_dir) is not None
+        is_done = stage_key in progress and progress[stage_key].get("status") == "done"
+
+        if is_done and has_checkpoint and not from_stage:
             LOGGER.info("✓ %s already completed, skipping", stage_key)
             stage_plan["status"] = "skipped (already done)"
             stage_plan["weights"] = progress[stage_key].get("weights", weights)
             plan["stages"].append(stage_plan)
             continue
+
+        # If checkpoint exists but progress.json doesn't mark it done,
+        # it was interrupted — re-run to completion
+        if has_checkpoint and not is_done:
+            LOGGER.info("↻ %s has partial checkpoint, resuming training", stage_key)
 
         if execute:
             LOGGER.info("━━━ %s (difficulty %d) ━━━", stage_key.upper(), stage["difficulty"])
@@ -404,17 +436,12 @@ def _run_curriculum(
                 workers=workers,
             )
 
-            best_pt = train_dir / "synthetic_plot_digitizer" / "weights" / "best.pt"
-            if best_pt.exists():
-                weights = str(best_pt)
+            found_pt = _find_stage_weights(train_dir)
+            if found_pt:
+                weights = found_pt
                 LOGGER.info("  ✓ Output weights: %s", weights)
             else:
-                weights_dir = train_dir / "synthetic_plot_digitizer" / "weights"
-                if weights_dir.exists():
-                    pts = list(weights_dir.glob("*.pt"))
-                    if pts:
-                        weights = str(pts[0])
-                        LOGGER.info("  ✓ Output weights (fallback): %s", weights)
+                LOGGER.warning("  ✗ No weights found after training %s", stage_key)
 
             stage_plan["result_weights"] = weights
             stage_plan["status"] = "done"
@@ -477,13 +504,13 @@ def _show_curriculum_status(output_dir: Path) -> None:
 
     for stage in stages:
         key = stage["name"]
-        best_pt = root / key / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
+        best_pt = _find_stage_weights(root / key / "train")
         data_exists = (root / key / "data" / "dataset.yaml").exists()
 
         if key in progress and progress[key].get("status") == "done":
             status = "DONE"
             marker = "✓"
-        elif best_pt.exists():
+        elif best_pt:
             status = "DONE (checkpoint found)"
             marker = "✓"
         elif data_exists:
@@ -494,8 +521,8 @@ def _show_curriculum_status(output_dir: Path) -> None:
             marker = " "
 
         wsize = ""
-        if best_pt.exists():
-            wsize = f" ({best_pt.stat().st_size / 1e6:.1f} MB)"
+        if best_pt:
+            wsize = f" ({Path(best_pt).stat().st_size / 1e6:.1f} MB)"
 
         print(f"  {marker} {key.upper()} (diff {stage['difficulty']})  [{status}]{wsize}")
 
@@ -534,8 +561,8 @@ def _show_chain_info(output_dir: Path, from_stage: int | None = None, resume: bo
     if resume:
         for stage in reversed(stages):
             key = stage["name"]
-            best_pt = root / key / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
-            if best_pt.exists() or (key in progress and progress[key].get("status") == "done"):
+            found_pt = _find_stage_weights(root / key / "train")
+            if found_pt or (key in progress and progress[key].get("status") == "done"):
                 from_stage = stages.index(stage) + 2
                 break
         if from_stage is None:
@@ -551,9 +578,9 @@ def _show_chain_info(output_dir: Path, from_stage: int | None = None, resume: bo
         weights = "yolo11s-seg.pt (base)"
     else:
         prev = stages[start_idx - 1]
-        prev_pt = root / prev["name"] / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
-        if prev_pt.exists():
-            weights = str(prev_pt)
+        prev_pt = _find_stage_weights(root / prev["name"] / "train")
+        if prev_pt:
+            weights = prev_pt
         else:
             weights = "yolo11s-seg.pt (base, fallback)"
 
@@ -563,13 +590,13 @@ def _show_chain_info(output_dir: Path, from_stage: int | None = None, resume: bo
             marker = "✓"
         print(f"  {marker} {stage['name'].upper():10s}  input: {weights}")
 
-        best_pt = root / stage["name"] / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
-        if best_pt.exists():
-            weights = str(best_pt)
+        found_pt = _find_stage_weights(root / stage["name"] / "train")
+        if found_pt:
+            weights = found_pt
             print(f"             output: {weights}")
         else:
-            print(f"             output: (will train → {stage['name']}/train/.../best.pt)")
-            weights = f"({stage['name']}/train/.../best.pt)"
+            print(f"             output: (will train → {stage['name']}/train/seg*/weights/best.pt)")
+            weights = f"({stage['name']}/train/seg*/weights/best.pt)"
 
     print("=" * 70)
     print()
@@ -595,16 +622,16 @@ def _sync_curriculum_progress(output_dir: Path) -> None:
     changed = False
     for stage in stages:
         key = stage["name"]
-        best_pt = root / key / "train" / "synthetic_plot_digitizer" / "weights" / "best.pt"
-        if best_pt.exists() and key not in progress:
+        found_pt = _find_stage_weights(root / key / "train")
+        if found_pt and key not in progress:
             progress[key] = {
                 "status": "done",
-                "weights": str(best_pt),
+                "weights": found_pt,
                 "difficulty": stage["difficulty"],
                 "synced": True,
             }
             changed = True
-            LOGGER.info("  ✓ Synced %s → %s", key, best_pt)
+            LOGGER.info("  ✓ Synced %s → %s", key, found_pt)
 
     if changed:
         with open(progress_file, "w") as f:
