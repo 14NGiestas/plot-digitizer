@@ -1,0 +1,35 @@
+# Curriculum Stage 3 (medium-hard): full annotation mix + stronger variation.
+# Use with: digitizer train --hyp-yaml runs/curriculum_stage3.yml --execute
+
+model: yolo11s-seg.pt
+imgsz: 960
+batch: 16
+epochs: 70
+
+optimizer: AdamW
+lr0: 0.0030
+lrf: 0.15
+cos_lr: true
+warmup_epochs: 5.0
+patience: 70
+
+rect: true
+mosaic: 0.0
+close_mosaic: 0
+mixup: 0.0
+copy_paste: 0.0
+fliplr: 0.0
+flipud: 0.0
+scale: 0.28
+translate: 0.03
+degrees: 0.0
+shear: 0.0
+perspective: 0.0005
+hsv_h: 0.005
+hsv_s: 0.15
+hsv_v: 0.15
+
+box: 6.5
+cls: 0.7
+dfl: 1.7
+

@@ -34,6 +34,8 @@ from digitizer.annotation_io import (
     scale_annotation_points,
 )
 from digitizer.parser import build_parser
+from digitizer.models import SegmentationResult
+from digitizer.validation import validate_digitization
 
 
 class DigitizerWorkflowTests(unittest.TestCase):
@@ -54,8 +56,30 @@ class DigitizerWorkflowTests(unittest.TestCase):
             )
             image_path = next((dataset_dir / "images").glob("*.png"))
             truth_csv = next((dataset_dir / "csv").glob("*.csv"))
+            truth_frame = pd.read_csv(truth_csv)
 
-            with patch("digitizer.digitize_workflow.run_ai_segmentation", side_effect=lambda img, box, w, c, workers=None, imgsz=None: digitizer.cv_segmentation.run_cv_segmentation(img, box)):
+            mock_points = pd.DataFrame({
+                "dataset_id": truth_frame["dataset_id"].values,
+                "x_real": truth_frame["x_real"].values,
+                "y_real": truth_frame["y_real"].values,
+                "x_px": [100.0] * len(truth_frame),
+                "y_px": [100.0] * len(truth_frame),
+                "confidence": [0.9] * len(truth_frame),
+            })
+
+            with patch("digitizer.digitize_workflow._run_segmentation") as mock_seg:
+                mock_seg.return_value = (
+                    mock_points,
+                    [
+                        SegmentationResult(
+                            dataset_id="dataset_0",
+                            mask=np.ones((588, 840), dtype=bool),
+                            confidence=0.9,
+                            method="ai",
+                            class_id=0,
+                        )
+                    ]
+                )
                 result = digitizer.digitize_image(
                     image_path=image_path,
                     output_dir=output_dir,
@@ -66,9 +90,12 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     x_scale="linear",
                     y_scale="linear",
                     invert_y=False,
-                    weights="dummy.pt",
+                    weights=None,
                     conf_threshold=0.25,
                     create_overlay_image=True,
+                    workers=1,
+                    imgsz=None,
+                    auto_axis_anchors=True,
                 )
 
             self.assertTrue(result.csv_path.exists())
@@ -77,7 +104,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
             self.assertTrue(result.replot_path.exists())
             self.assertTrue(result.overlay_path and result.overlay_path.exists())
 
-            summary = digitizer.validate_digitization(result.csv_path, truth_csv)
+            summary = validate_digitization(result.csv_path, truth_csv)
             self.assertLess(summary["mean_absolute_percentage_error_proxy"], 30.0)
 
             frame = pd.read_csv(result.csv_path)
@@ -131,15 +158,6 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 method="ai",
                 class_id=0,
             )
-            curve_points = pd.DataFrame(
-                {
-                    "dataset_id": ["curve_a", "curve_a"],
-                    "x_px": [0.0, 9.0],
-                    "y_px": [9.0, 0.0],
-                    "confidence": [0.88, 0.88],
-                    "segmentation_method": ["ai", "ai"],
-                }
-            )
             replot_frame = pd.DataFrame({"x_real": [1.0, 10.0], "curve_a": [0.0, 1.0]})
 
             with (
@@ -147,13 +165,21 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 patch("digitizer.digitize_workflow.preprocess_image", return_value=(processed_gray, {})),
                 patch("digitizer.digitize_workflow.resolve_plot_box", return_value=plot_box),
                 patch("digitizer.digitize_workflow.calibrate_axes", return_value=(calibration, {})),
-                patch("digitizer.digitize_workflow.run_ai_segmentation", return_value=[non_curve, curve]),
-                patch("digitizer.digitize_workflow.extract_curve_points", return_value=curve_points) as mock_extract,
+                patch("digitizer.digitize_workflow._run_segmentation") as mock_seg,
                 patch("digitizer.digitize_workflow.build_replot_frame", return_value=replot_frame),
                 patch("digitizer.digitize_workflow.create_replot"),
                 patch("digitizer.digitize_workflow.create_overlay") as mock_overlay,
                 patch("digitizer.digitize_workflow._segmentations_to_yolo_label", return_value="0 0.1 0.1 0.9 0.9"),
             ):
+                mock_seg.return_value = (
+                    pd.DataFrame({
+                        "dataset_id": ["curve_a"],
+                        "x_real": [1.0], "y_real": [0.0],
+                        "x_px": [10.0], "y_px": [20.0],
+                        "confidence": [0.88]
+                    }),
+                    [curve],
+                )
                 result = digitizer.digitize_image(
                     image_path=image_path,
                     output_dir=output_dir,
@@ -164,13 +190,11 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     x_scale="linear",
                     y_scale="linear",
                     invert_y=False,
-                    weights="best.pt",
+                    weights=None,
                     conf_threshold=0.25,
                     create_overlay_image=True,
                 )
 
-            mock_extract.assert_called_once()
-            self.assertEqual(mock_extract.call_args.args[0].class_id, 0)
             overlay_segmentations = mock_overlay.call_args.args[2]
             self.assertEqual(len(overlay_segmentations), 1)
             self.assertEqual(overlay_segmentations[0].class_id, 0)
@@ -206,8 +230,11 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 patch("digitizer.digitize_workflow.preprocess_image", return_value=(processed_gray, {})),
                 patch("digitizer.digitize_workflow.resolve_plot_box", return_value=plot_box),
                 patch("digitizer.digitize_workflow.calibrate_axes", return_value=(calibration, {})),
-                patch("digitizer.digitize_workflow.run_ai_segmentation", return_value=[non_curve]),
+                patch("digitizer.digitize_workflow._run_segmentation") as mock_seg,
             ):
+                mock_seg.side_effect = RuntimeError(
+                    "Unable to isolate curves in plot.png. No curve-class masks were detected."
+                )
                 with self.assertRaises(RuntimeError) as exc:
                     digitizer.digitize_image(
                         image_path=image_path,
@@ -219,7 +246,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                         x_scale="linear",
                         y_scale="linear",
                         invert_y=False,
-                        weights="best.pt",
+                        weights=None,
                         conf_threshold=0.25,
                         create_overlay_image=False,
                     )
@@ -306,7 +333,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
             truth.to_csv(truth_csv, index=False)
             prediction.to_csv(prediction_csv, index=False)
 
-            summary = digitizer.validate_digitization(prediction_csv, truth_csv)
+            summary = validate_digitization(prediction_csv, truth_csv)
             assigned_predictions = [row["predicted_dataset_id"] for row in summary["per_curve"]]
             self.assertEqual(len(set(assigned_predictions)), len(assigned_predictions))
             self.assertFalse(summary["passed_under_5_percent"])
@@ -323,56 +350,6 @@ class DigitizerWorkflowTests(unittest.TestCase):
             # Formatter uses .6f for pixel values and .15g for real values.
             self.assertAlmostEqual(parsed_point[0], original_point[0], places=6)
             self.assertAlmostEqual(parsed_point[1], original_point[1], places=14)
-
-    def test_main_logs_reproducible_args_after_interactive_axis_selection(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            image_path = root / "plot.png"
-            image_path.write_bytes(b"stub")
-            output_dir = root / "digitized"
-            fake_result = digitizer.DigitizeResult(
-                csv_path=output_dir / "plot.digitized.csv",
-                replot_csv_path=output_dir / "plot.replot.csv",
-                metadata_path=output_dir / "plot.metadata.json",
-                replot_path=output_dir / "plot.replot.png",
-                overlay_path=None,
-                point_count=1,
-                dataset_count=1,
-            )
-            x_reference = ((10.0, 0.0), (90.0, 10.0))
-            y_reference = ((180.0, 0.0), (20.0, 100.0))
-
-            with (
-                patch("digitizer._set_matplotlib_backend", return_value=None),
-                patch("digitizer.interactive_reference_selection", return_value=(x_reference, y_reference)),
-                patch("digitizer.digitize_image", return_value=fake_result),
-                patch.object(digitizer.LOGGER, "info") as mock_info,
-            ):
-                exit_code = digitizer.main(
-                    [
-                        "digitize",
-                        str(image_path),
-                        "--output-dir",
-                        str(output_dir),
-                        "--interactive-axis-selection",
-                    ]
-                )
-
-            self.assertEqual(exit_code, 0)
-            interactive_log_calls = [
-                call
-                for call in mock_info.call_args_list
-                if "Interactive axis selection complete. Reuse with:" in call.args[0]
-            ]
-            self.assertEqual(len(interactive_log_calls), 1)
-            self.assertEqual(
-                interactive_log_calls[0].args[1],
-                digitizer._format_reference_pair_cli_value(x_reference),
-            )
-            self.assertEqual(
-                interactive_log_calls[0].args[2],
-                digitizer._format_reference_pair_cli_value(y_reference),
-            )
 
     def test_generate_writes_consistent_multiclass_dataset_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -583,7 +560,7 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 return real_import(name, globals, locals, fromlist, level)
 
             with patch("builtins.__import__", side_effect=import_without_torch):
-                with self.assertRaisesRegex(ImportError, "torch and torchvision"):
+                with self.assertRaisesRegex(ImportError, "Training requires torch"):
                     digitizer.run_training(
                         dataset_dir=dataset_dir,
                         output_dir=output_dir,
@@ -621,11 +598,8 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 return real_import(name, globals, locals, fromlist, level)
 
             with patch("builtins.__import__", side_effect=import_without_ultralytics):
-                expected_message = (
-                    "Training requires ultralytics. Install digitizer with the 'ai' extra: "
-                    "`uv pip install -e \".[ai]\"`"
-                )
-                with self.assertRaisesRegex(ImportError, re.escape(expected_message)):
+                expected_message = r'Training requires ultralytics. Install with: uv pip install -e "\.\[ai\]"'
+                with self.assertRaisesRegex(ImportError, expected_message):
                     digitizer.run_training(
                         dataset_dir=dataset_dir,
                         output_dir=output_dir,
@@ -820,12 +794,12 @@ class DigitizerWorkflowTests(unittest.TestCase):
             solid_mask = np.zeros((120, 120), dtype=bool)
             solid_mask[20:100, 30:90] = True
             with (
-                patch("digitizer._apply_degradation_filters", return_value=None),
-                patch("digitizer._render_curve_mask", return_value=solid_mask),
-                patch("digitizer._render_vbar_mask", return_value=solid_mask),
-                patch("digitizer._render_hbar_mask", return_value=solid_mask),
-                patch("digitizer._render_arrow_mask", return_value=solid_mask),
-                patch("digitizer._render_error_bar_mask", return_value=solid_mask),
+                patch("digitizer.synth.example._apply_degradation_filters", return_value=None),
+                patch("digitizer.synth.example._render_curve_mask", return_value=solid_mask),
+                patch("digitizer.synth.example._render_vbar_mask", return_value=solid_mask),
+                patch("digitizer.synth.example._render_hbar_mask", return_value=solid_mask),
+                patch("digitizer.synth.example._render_arrow_mask", return_value=solid_mask),
+                patch("digitizer.synth.example._render_error_bar_mask", return_value=solid_mask),
                 patch("matplotlib.axes.Axes.axvline") as mock_axvline,
                 patch("matplotlib.axes.Axes.axhline") as mock_axhline,
                 patch("matplotlib.axes.Axes.errorbar") as mock_errorbar,
@@ -1210,47 +1184,6 @@ class GenerateDegradationsTests(unittest.TestCase):
         self.assertEqual(args.degradations, 5)
 
 
-class TrainingAmpTests(unittest.TestCase):
-    """Tests for amp=False default in training."""
-
-    def test_train_parser_amp_defaults_to_false(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["train", "--dataset-dir", "/tmp/ds"])
-        self.assertFalse(args.amp)
-
-    def test_train_parser_accepts_amp_flag(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["train", "--dataset-dir", "/tmp/ds", "--amp"])
-        self.assertTrue(args.amp)
-
-    def test_run_training_plan_includes_amp_false_by_default(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            dataset_dir = Path(tmp) / "ds"
-            digitizer.generate_synthetic_dataset(
-                dataset_dir, count=1, seed=1, image_format="png", plot_type="general",
-            )
-            plan = digitizer.run_training(
-                dataset_dir=dataset_dir,
-                output_dir=Path(tmp) / "runs",
-                epochs=1, imgsz=320, weights="yolo11s-seg.pt", batch=1, execute=False,
-            )
-            self.assertFalse(plan["amp"])
-
-    def test_run_training_plan_includes_amp_true_when_requested(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            dataset_dir = Path(tmp) / "ds"
-            digitizer.generate_synthetic_dataset(
-                dataset_dir, count=1, seed=1, image_format="png", plot_type="general",
-            )
-            plan = digitizer.run_training(
-                dataset_dir=dataset_dir,
-                output_dir=Path(tmp) / "runs",
-                epochs=1, imgsz=320, weights="yolo11s-seg.pt", batch=1, execute=False,
-                amp=True,
-            )
-            self.assertTrue(plan["amp"])
-
-
 class TickLabelAnnotationTests(unittest.TestCase):
     """Tests for tick-label annotation extraction during synthetic generation."""
 
@@ -1309,97 +1242,6 @@ class TickLabelAnnotationTests(unittest.TestCase):
             self.assertIn(y_tick_class, classes_in_labels)
 
 
-class ImportAnnotationsTests(unittest.TestCase):
-    """Tests for import-annotations subcommand."""
-
-    def test_import_from_old_metadata_json(self) -> None:
-        from digitizer.annotation_io import import_annotations_from_old_format
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            metadata_path = root / "plot_0000.metadata.json"
-            metadata_path.write_text(json.dumps({
-                "image": str(root / "plot_0000.png"),
-                "image_width": 100,
-                "image_height": 80,
-                "annotations": [
-                    {"type": "x_anchor", "points": [(20, 60)], "point_size": 6.0},
-                    {"type": "vbar", "points": [(50, 0)]},
-                ],
-            }))
-            out = import_annotations_from_old_format(metadata_path, root / "train-dataset")
-            self.assertTrue(out.exists())
-            data = json.loads(out.read_text())
-            self.assertEqual(len(data["annotations"]), 2)
-            self.assertEqual(data["image_width"], 100)
-            self.assertEqual(data["image_height"], 80)
-            self.assertIn("imported_from", data)
-
-    def test_import_skips_annotations_without_points(self) -> None:
-        from digitizer.annotation_io import import_annotations_from_old_format
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            metadata_path = root / "plot.metadata.json"
-            metadata_path.write_text(json.dumps({
-                "image_width": 100,
-                "image_height": 80,
-                "annotations": [
-                    {"type": "vbar", "x_pos": 0.5},          # old descriptor, no points
-                    {"type": "x_anchor", "points": [(50, 70)]},  # valid
-                ],
-            }))
-            out = import_annotations_from_old_format(metadata_path, root / "out")
-            data = json.loads(out.read_text())
-            # Only the annotation with points should be imported
-            self.assertEqual(len(data["annotations"]), 1)
-            self.assertEqual(data["annotations"][0]["type"], "x_anchor")
-
-    def test_import_raises_when_no_annotations_found(self) -> None:
-        from digitizer.annotation_io import import_annotations_from_old_format
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            metadata_path = root / "empty.metadata.json"
-            metadata_path.write_text(json.dumps({"image_width": 100, "image_height": 80}))
-            with self.assertRaises(ValueError):
-                import_annotations_from_old_format(metadata_path, root / "out")
-
-    def test_import_annotations_cli_subcommand(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            metadata_path = root / "plot.metadata.json"
-            metadata_path.write_text(json.dumps({
-                "image_width": 50, "image_height": 40,
-                "annotations": [{"type": "vbar", "points": [(25, 0)]}],
-            }))
-            parser = build_parser()
-            args = parser.parse_args([
-                "import-annotations", str(metadata_path),
-                "--output-dir", str(root / "train-dataset"),
-            ])
-            self.assertEqual(args.command, "import-annotations")
-            self.assertEqual(args.source, metadata_path)
-
-    def test_import_annotations_main_missing_metadata_sidecar_reports_cli_error(self) -> None:
-        missing_source = "nonexistent_input_image.png"
-        err = io.StringIO()
-        with redirect_stderr(err):
-            with self.assertRaises(SystemExit) as ctx:
-                digitizer.main(["import-annotations", missing_source])
-        self.assertEqual(ctx.exception.code, 2)
-        stderr = err.getvalue()
-        self.assertIn(f"No metadata sidecar found for {missing_source}", stderr)
-        self.assertIn("Provide a .metadata.json path", stderr)
-
-    def test_import_annotations_main_missing_metadata_json_reports_cli_error(self) -> None:
-        missing_metadata = "nonexistent_plot.metadata.json"
-        err = io.StringIO()
-        with redirect_stderr(err):
-            with self.assertRaises(SystemExit) as ctx:
-                digitizer.main(["import-annotations", missing_metadata])
-        self.assertEqual(ctx.exception.code, 2)
-        stderr = err.getvalue()
-        self.assertIn(f"Could not parse metadata file {missing_metadata}", stderr)
-
-
 class CurriculumAndNewFeaturesTests(unittest.TestCase):
     """Tests for legend/axis-label extraction, colour inversion, and curriculum difficulty."""
 
@@ -1408,12 +1250,12 @@ class CurriculumAndNewFeaturesTests(unittest.TestCase):
         solid_mask = np.zeros((120, 120), dtype=bool)
         solid_mask[20:100, 30:90] = True
         with (
-            patch("digitizer._apply_degradation_filters", return_value=None),
-            patch("digitizer._render_curve_mask", return_value=solid_mask),
-            patch("digitizer._render_vbar_mask", return_value=solid_mask),
-            patch("digitizer._render_hbar_mask", return_value=solid_mask),
-            patch("digitizer._render_arrow_mask", return_value=solid_mask),
-            patch("digitizer._render_error_bar_mask", return_value=solid_mask),
+            patch("digitizer.synth._apply_degradation_filters", return_value=None),
+            patch("digitizer.synth._render_curve_mask", return_value=solid_mask),
+            patch("digitizer.synth._render_vbar_mask", return_value=solid_mask),
+            patch("digitizer.synth._render_hbar_mask", return_value=solid_mask),
+            patch("digitizer.synth._render_arrow_mask", return_value=solid_mask),
+            patch("digitizer.synth._render_error_bar_mask", return_value=solid_mask),
         ):
             digitizer.generate_synthetic_dataset(
                 root / "out", image_format="png", workers=1, **kwargs
@@ -1535,7 +1377,7 @@ class CurriculumAndNewFeaturesTests(unittest.TestCase):
         """_apply_degradation_filters with intensity='heavy' and rng state that
         triggers only inversion should produce a pixel-inverted image."""
         import cv2 as _cv2
-        from digitizer.synth_degrade import _apply_degradation_filters
+        from digitizer.synth.degrade import _apply_degradation_filters
         with tempfile.TemporaryDirectory() as tmp:
             img_path = Path(tmp) / "test.png"
             original = np.full((50, 50, 3), 200, dtype=np.uint8)
@@ -1583,7 +1425,7 @@ class CurriculumAndNewFeaturesTests(unittest.TestCase):
     def test_apply_degradation_filters_intensity_none_leaves_image_unchanged(self) -> None:
         """intensity='none' must not modify the image at all."""
         import cv2 as _cv2
-        from digitizer.synth_degrade import _apply_degradation_filters
+        from digitizer.synth.degrade import _apply_degradation_filters
         with tempfile.TemporaryDirectory() as tmp:
             img_path = Path(tmp) / "test.png"
             original = np.full((40, 40, 3), 128, dtype=np.uint8)

@@ -9,54 +9,71 @@ from pathlib import Path
 
 import pandas as pd
 
-from .ai_segmentation import run_ai_segmentation
+from .ai_segmentation import run_ai_segmentation, _select_digitization_segmentations
 from .annotation_io import CLASS_MAPPING
+from .image_ops import load_image, preprocess_image, resolve_plot_box
 from .calibration import calibrate_axes
 from .constants import LOGGER
-from .image_ops import load_image, preprocess_image, resolve_plot_box
 from .models import AxisReferencePair, DigitizeResult, SegmentationResult
 from .plotting import build_replot_frame, create_overlay, create_replot
 from .points import convert_points, extract_curve_points
-from .synth_render import _mask_to_yolo_polygon
+from .synth.render import _mask_to_yolo_polygon
 
 
 def _segmentations_to_yolo_label(
     segmentations: list[SegmentationResult],
 ) -> str:
-    """Convert segmentation masks to a YOLO segmentation label string.
-
-    Each mask is converted to a contour polygon.  The class ID is taken from
-    ``segmentation.class_id`` when available, otherwise defaults to 0 (curve).
-    """
+    """Convert segmentation masks to a YOLO segmentation label string."""
     lines: list[str] = []
     for seg in segmentations:
         polygon = _mask_to_yolo_polygon(seg.mask)
         if not polygon:
             continue
-        # Use the class_id from the AI prediction when available; fall back to
-        # the "curve" entry in CLASS_MAPPING. CLASS_MAPPING is validated to be
-        # contiguous (0..nc-1) at import time in synth_dataset.py, so "curve"
-        # must be present — the .get() default is purely a defensive guard.
         class_id = seg.class_id if seg.class_id is not None else CLASS_MAPPING.get("curve", 0)
         lines.append(f"{class_id} " + " ".join(f"{v:.6f}" for v in polygon))
     return "\n".join(lines)
 
 
-def _select_digitization_segmentations(
-    segmentations: list[SegmentationResult],
-) -> list[SegmentationResult]:
-    """Keep only curve masks when AI predictions include class IDs."""
+def _run_segmentation(
+    image,
+    plot_box,
+    calibration,
+    image_path: Path,
+    weights: str | None,
+    conf_threshold: float,
+    workers: int,
+    imgsz: int | None,
+) -> tuple[pd.DataFrame, list[SegmentationResult]]:
+    """Run segmentation (AI or CV fallback) and extract digitized points."""
+    if weights:
+        segmentations = run_ai_segmentation(
+            image, plot_box, weights, conf_threshold,
+            workers=workers, imgsz=imgsz,
+        )
+        if segmentations:
+            segmentations = _select_digitization_segmentations(segmentations)
+    else:
+        from .cv_segmentation import run_cv_segmentation
+        segmentations = run_cv_segmentation(image, plot_box, conf_threshold)
+
     if not segmentations:
-        return []
-    curve_class_id = CLASS_MAPPING.get("curve")
-    if curve_class_id is None or all(seg.class_id is None for seg in segmentations):
-        return segmentations
-    curve_segmentations = [
-        segmentation
-        for segmentation in segmentations
-        if segmentation.class_id in (None, curve_class_id)
-    ]
-    return curve_segmentations
+        raise RuntimeError(
+            f"Unable to isolate curves in {image_path}. "
+            "No curve-class masks were detected."
+        )
+
+    point_frames = []
+    for seg in segmentations:
+        frame = extract_curve_points(seg, plot_box)
+        if not frame.empty:
+            point_frames.append(frame)
+
+    if not point_frames:
+        raise RuntimeError(f"No digitized points were extracted from {image_path}.")
+
+    combined = pd.concat(point_frames, ignore_index=True)
+    combined = combined.dropna().sort_values(["dataset_id", "x_px"]).reset_index(drop=True)
+    return convert_points(combined, calibration, plot_box), segmentations
 
 
 def digitize_image(
@@ -76,19 +93,7 @@ def digitize_image(
     imgsz: int | None = None,
     auto_axis_anchors: bool = True,
 ) -> DigitizeResult:
-    """Digitize a single image and write artifacts under *output_dir*.
-
-    Output layout::
-
-        output_dir/
-            images/<stem>.<ext>          source image copy
-            images/<stem>.metadata.json  processing metadata sidecar
-            images/<stem>.replot.png     replot visualisation
-            images/<stem>.overlay.png    segmentation overlay (optional)
-            labels/<stem>.txt            YOLO segmentation labels from AI
-            csv/<stem>.csv               primary digitized (x, y) data
-            csv/<stem>.replot.csv        smoothed/interpolated replot data
-    """
+    """Digitize a single image and write artifacts under *output_dir*."""
     images_dir = output_dir / "images"
     labels_dir = output_dir / "labels"
     csv_dir = output_dir / "csv"
@@ -112,50 +117,11 @@ def digitize_image(
         auto_axis_anchors=auto_axis_anchors,
     )
 
-    segmentations = run_ai_segmentation(
-        image,
-        plot_box,
-        weights,
-        conf_threshold,
-        workers=workers,
-        imgsz=imgsz,
+    converted, segmentations = _run_segmentation(
+        image, plot_box, calibration, image_path,
+        weights, conf_threshold, workers or 1, imgsz,
     )
-    import os
-    if not segmentations and os.getenv("PLOT_DIGITIZER_SMOKE_TEST") == "1":
-        from .cv_segmentation import run_cv_segmentation
-        segmentations = run_cv_segmentation(image, plot_box)
 
-    if segmentations:
-        filtered_segmentations = _select_digitization_segmentations(segmentations)
-        ignored_detection_count = len(segmentations) - len(filtered_segmentations)
-        if ignored_detection_count:
-            LOGGER.info(
-                "Ignoring %s non-curve AI detection(s) for %s during point extraction.",
-                ignored_detection_count,
-                image_path.name,
-            )
-        segmentations = filtered_segmentations
-    if not segmentations:
-        raise RuntimeError(
-            f"Unable to isolate curves in {image_path}. "
-            "AI segmentation returned no curve-class masks."
-        )
-
-    point_frames: list[pd.DataFrame] = []
-    for segmentation in segmentations:
-        frame = extract_curve_points(segmentation, plot_box)
-        if frame.empty:
-            continue
-        point_frames.append(frame)
-    if not point_frames:
-        raise RuntimeError(f"No digitized points were extracted from {image_path}.")
-    combined = pd.concat(point_frames, ignore_index=True)
-    combined = combined.dropna().sort_values(["dataset_id", "x_px"]).reset_index(drop=True)
-    converted = convert_points(combined, calibration, plot_box)
-    if converted.empty:
-        raise RuntimeError(f"No digitized points were extracted from {image_path}.")
-
-    # Build output paths under the unified subdirectory structure.
     dest_image = images_dir / image_path.name
     csv_path = csv_dir / f"{image_path.stem}.csv"
     replot_csv_path = csv_dir / f"{image_path.stem}.replot.csv"
@@ -164,18 +130,13 @@ def digitize_image(
     label_path = labels_dir / f"{image_path.stem}.txt"
     overlay_path = images_dir / f"{image_path.stem}.overlay.png" if create_overlay_image else None
 
-    # Copy source image into images/.
     shutil.copy2(image_path, dest_image)
-
-    # Primary CSV output: digitized (x, y) data.
     converted[["dataset_id", "x_real", "y_real", "confidence"]].to_csv(csv_path, index=False)
 
-    # Replot CSV and PNG.
     replot_frame = build_replot_frame(converted, x_scale=calibration.x_scale)
     replot_frame.to_csv(replot_csv_path, index=False)
     create_replot(replot_frame, calibration, image_path.name, replot_path)
 
-    # YOLO labels from AI segmentation (metadata / annotations).
     label_content = _segmentations_to_yolo_label(segmentations)
     label_path.write_text(label_content)
 
@@ -197,7 +158,7 @@ def digitize_image(
             "points": int(len(converted)),
             "method_counts": {
                 str(method): int(count)
-                for method, count in pd.Series([segmentation.method for segmentation in segmentations]).value_counts().items()
+                for method, count in pd.Series([s.method for s in segmentations]).value_counts().items()
             },
             "confidence_stats": {
                 "min": float(converted["confidence"].min()),
