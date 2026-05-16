@@ -43,6 +43,7 @@ _MODE_COLORS: dict[str, str] = {
     "y_axis": "teal",
     "x_anchor": "goldenrod",
     "y_anchor": "mediumseagreen",
+    "paint_mask": "magenta",
 }
 _MIN_ZOOM_HALF_SIZE = 30.0
 _ZOOM_HALF_SIZE_SCALE = 0.075
@@ -60,6 +61,7 @@ _KEY_TO_MODE: dict[str, str] = {
     "8": "y_axis", "y": "y_axis",
     "9": "x_anchor",
     "0": "y_anchor",
+    "m": "paint_mask",
 }
 # None means variable-length (curve); commit with F key.
 _POINTS_NEEDED: dict[str, int | None] = {
@@ -73,9 +75,10 @@ _POINTS_NEEDED: dict[str, int | None] = {
     "y_axis": 2,
     "x_anchor": 1,
     "y_anchor": 1,
+    "paint_mask": None,
 }
 _HELP = (
-    "1/v=vbar 2/h=hbar 3/a=arrow 4/c=curve 5/e=err_bar 6/p=plot_area 7/x=x_axis 8/y=y_axis 9=x_anchor 0=y_anchor | "
+    "1/v=vbar 2/h=hbar 3/a=arrow 4/c=curve 5/e=err_bar 6/p=plot_area 7/x=x_axis 8/y=y_axis 9=x_anchor 0=y_anchor m=paint | "
     "F=commit curve | Z=undo | Enter=save | Esc=cancel"
 )
 
@@ -114,7 +117,59 @@ class _AnnotatorSession:
     def _clamp(self, x: float, y: float) -> tuple[float, float]:
         return float(np.clip(x, 0, self._w - 1)), float(np.clip(y, 0, self._h - 1))
 
+    def _extract_painted_curve(self, radius: float = 10.0) -> list[tuple[float, float]]:
+        if len(self._current) < 2:
+            return []
+        import cv2
+        from .cv_segmentation import _foreground_mask, _saturated_mask
+        
+        paint_mask = np.zeros((self._h, self._w), dtype=np.uint8)
+        pts = np.array(self._current, dtype=np.int32)
+        for i in range(len(pts) - 1):
+            cv2.line(paint_mask, tuple(pts[i]), tuple(pts[i+1]), 255, int(radius * 2))
+            
+        ys, xs = np.nonzero(paint_mask)
+        if len(xs) == 0: return []
+        left, right = max(0, xs.min() - 5), min(self._w, xs.max() + 5)
+        top, bottom = max(0, ys.min() - 5), min(self._h, ys.max() + 5)
+        
+        crop = self._image[top:bottom, left:right]
+        fg = _saturated_mask(crop)
+        if fg.sum() < 10:
+            fg = _foreground_mask(crop)
+            
+        fg_global = np.zeros((self._h, self._w), dtype=bool)
+        fg_global[top:bottom, left:right] = fg
+        final_mask = fg_global & (paint_mask > 0)
+        
+        fys, fxs = np.nonzero(final_mask)
+        if len(fxs) == 0: return []
+        
+        unique_x = np.unique(fxs)
+        extracted = []
+        for x in unique_x:
+            y = fys[fxs == x].mean()
+            extracted.append((float(x), float(y)))
+            
+        if len(extracted) > 150:
+            step = max(1, len(extracted) // 150)
+            extracted = extracted[::step]
+            
+        return extracted
+
     def _commit_current(self) -> None:
+        if self._mode == "paint_mask":
+            extracted = self._extract_painted_curve()
+            if extracted:
+                self._committed.append({
+                    "type": "curve",
+                    "points": extracted,
+                    "line_width": self._line_width,
+                })
+                LOGGER.debug("Committed extracted curve (%d pts)", len(extracted))
+            self._current = []
+            return
+
         needed = _POINTS_NEEDED[self._mode]
         min_pts = 2 if needed is None else needed
         if len(self._current) >= min_pts:
@@ -243,6 +298,11 @@ class _AnnotatorSession:
             return
         x, y = self._clamp(float(event.xdata), float(event.ydata))
         self._active_point = (x, y)
+        if self._mode == "paint_mask" and getattr(event, 'button', None) == 1:
+            if not self._current or np.hypot(x - self._current[-1][0], y - self._current[-1][1]) > 5:
+                self._current.append((x, y))
+                self._redraw()
+                return
         self._refresh_zoom()
         self._fig.canvas.draw_idle()
 

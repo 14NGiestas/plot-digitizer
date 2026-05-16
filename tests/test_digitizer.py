@@ -55,20 +55,21 @@ class DigitizerWorkflowTests(unittest.TestCase):
             image_path = next((dataset_dir / "images").glob("*.png"))
             truth_csv = next((dataset_dir / "csv").glob("*.csv"))
 
-            result = digitizer.digitize_image(
-                image_path=image_path,
-                output_dir=output_dir,
-                x_range=None,
-                y_range=None,
-                x_reference=None,
-                y_reference=None,
-                x_scale="linear",
-                y_scale="linear",
-                invert_y=False,
-                weights=None,
-                conf_threshold=0.25,
-                create_overlay_image=True,
-            )
+            with patch("digitizer.digitize_workflow.run_ai_segmentation", side_effect=lambda img, box, w, c, workers=None: digitizer.cv_segmentation.run_cv_segmentation(img, box)):
+                result = digitizer.digitize_image(
+                    image_path=image_path,
+                    output_dir=output_dir,
+                    x_range=None,
+                    y_range=None,
+                    x_reference=None,
+                    y_reference=None,
+                    x_scale="linear",
+                    y_scale="linear",
+                    invert_y=False,
+                    weights="dummy.pt",
+                    conf_threshold=0.25,
+                    create_overlay_image=True,
+                )
 
             self.assertTrue(result.csv_path.exists())
             self.assertTrue(result.replot_csv_path.exists())
