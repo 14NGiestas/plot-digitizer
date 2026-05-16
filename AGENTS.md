@@ -38,8 +38,8 @@ This document provides high-signal instructions for OpenCode agents working on t
 ## Key Commands
 
 ### Testing
-- **Run Unit Tests**: `nix develop --command sh -c "PYTHONPATH=src python -m unittest discover -s tests -p 'test_*.py' -v"`
-  - Alternatively (if not using nix develop): Ensure `PYTHONPATH=src` is set and `python -m unittest discover -s tests -p 'test_*.py' -v` is run.
+- **Run Unit Tests**: `nix develop --command sh -c "python -m unittest discover -s tests -p 'test_*.py' -v"`
+  - Alternatively (if not using nix develop): Ensure `python -m unittest discover -s tests -p 'test_*.py' -v` is run.
 
 ### CLI Usage (`digitizer`)
 The main entry point is the `digitizer` command.

@@ -20,7 +20,7 @@ nix develop .#cuda
 Run tests:
 
 ```bash
-nix develop --command sh -c "PYTHONPATH=src python -m unittest discover -s tests -p 'test_*.py' -v"
+nix develop --command sh -c "python -m unittest discover -s tests -p 'test_*.py' -v"
 ```
 
 ### Local install (uv)

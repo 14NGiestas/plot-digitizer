@@ -37,7 +37,7 @@ jobs:
         run: nix build .#default
 
       - name: Run test suite in Nix dev shell
-        run: nix develop --command sh -c "PYTHONPATH=src python -m unittest discover -s tests -p 'test_*.py' -v"
+        run: nix develop --command sh -c "python -m unittest discover -s tests -p 'test_*.py' -v"
 
       - name: Run packaged CLI smoke workflow
         run: |
