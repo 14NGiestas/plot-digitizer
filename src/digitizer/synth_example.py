@@ -15,7 +15,7 @@ from .synth_annotations import _add_annotation_layers
 from .synth_curve_plotting import _add_curve_layers, _configure_plot_curves, _create_plot_axes
 from .synth_degrade import _apply_degradation_filters
 from .synth_output import _save_synthetic_outputs
-from .synth_render import _render_arrow_mask, _render_curve_mask, _render_error_bar_mask, _render_hbar_mask, _render_vbar_mask
+from .synth_render import _mask_to_yolo_polygon, _render_arrow_mask, _render_curve_mask, _render_error_bar_mask, _render_hbar_mask, _render_vbar_mask
 
 
 def _resolve_difficulty_settings(difficulty: int) -> dict[str, Any] | None:
@@ -155,13 +155,11 @@ def _write_synthetic_example(
     y_norm_to_data = lambda norm_y: float(y_range[0] + float(np.clip(norm_y, 0.0, 1.0)) * (y_range[1] - y_range[0]))
 
     ground_truth_frames, curve_descriptors, label_lines = _add_curve_layers(
-        ax, x_values, x_range, y_range, use_log_x, raw_curves, rng, fig_size, dpi,
-        render_curve_mask_fn, show_legend=show_legend,
+        ax, x_values, x_range, y_range, use_log_x, raw_curves, rng, show_legend=show_legend,
     )
     new_label_lines, new_annotation_descriptors = _add_annotation_layers(
         ax, rng, fig_size, dpi, x_range, y_range, use_log_x,
         x_norm_to_data, y_norm_to_data,
-        render_vbar_mask_fn, render_hbar_mask_fn, render_arrow_mask_fn, render_error_bar_mask_fn,
         vbar_count_range=settings["vbar_count_range"] if settings else None,
         hbar_count_range=settings["hbar_count_range"] if settings else None,
         arrow_count_range=settings["arrow_count_range"] if settings else None,
@@ -170,6 +168,41 @@ def _write_synthetic_example(
     )
     label_lines.extend(new_label_lines)
     annotation_descriptors.extend(new_annotation_descriptors)
+
+    fig.tight_layout()
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    axis_bbox = ax.get_window_extent(renderer=renderer)
+    ax_position = axis_bbox.transformed(fig.transFigure.inverted()).bounds
+
+    for i, desc in enumerate(curve_descriptors):
+        df = ground_truth_frames[i]
+        mask = render_curve_mask_fn(
+            fig_size, dpi, df["x_real"].values, df["y_real"].values, x_range, y_range, desc,
+            x_scale="log" if use_log_x else "linear", ax_position=ax_position,
+        )
+        polygon = _mask_to_yolo_polygon(mask)
+        if polygon:
+            label_lines.append("0 " + " ".join(f"{value:.6f}" for value in polygon))
+
+    for desc in annotation_descriptors:
+        t = desc["type"]
+        style = desc.get("style", {"linewidth": 1.5, "linestyle": "--"})
+        if t == "vbar":
+            mask = render_vbar_mask_fn(fig_size, dpi, desc["x_pos"], y_range, style["linewidth"], style, ax_position=ax_position)
+        elif t == "hbar":
+            y_pos_norm = desc.get("y_pos_norm", (desc["y_pos"] - y_range[0]) / (y_range[1] - y_range[0]))
+            mask = render_hbar_mask_fn(fig_size, dpi, y_pos_norm, x_range, style["linewidth"], style, x_scale="log" if use_log_x else "linear", ax_position=ax_position)
+        elif t == "arrow":
+            mask = render_arrow_mask_fn(fig_size, dpi, desc["start"], desc["end"], style, ax_position=ax_position)
+        elif t == "error_bar":
+            mask = render_error_bar_mask_fn(fig_size, dpi, desc["x_pos"], desc["y_pos"], desc["y_err"], style, ax_position=ax_position)
+        else:
+            continue
+        polygon = _mask_to_yolo_polygon(mask)
+        if polygon:
+            label_lines.append(f"{desc['class_id']} " + " ".join(f"{value:.6f}" for value in polygon))
+
     _save_synthetic_outputs(
         fig, ax, image_path, image_format, label_path, metadata_path, annotations_path, csv_path,
         x_range, y_range, use_log_x, plot_type,

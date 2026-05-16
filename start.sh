@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
+(
 WORKERS=${WORKERS:-$(nproc)}
 SAMPLES=${SAMPLES:-500}
 
@@ -75,5 +75,5 @@ validate_stage "stage4" "training-runs/stage4/synthetic_plot_digitizer/weights/l
 
 echo ""
 echo "Training complete. Best model: training-runs/stage4/synthetic_plot_digitizer/weights/best.pt"
-echo "Press [Enter] to continue..."
+) && echo "Press [Enter] to continue..."
 read

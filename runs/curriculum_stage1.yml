@@ -13,6 +13,9 @@ cos_lr: true
 warmup_epochs: 3.0
 patience: 50
 
+# Keep geometry stable and prevent stretching
+rect: true
+
 # Keep augmentation light in stage 1.
 mosaic: 0.0
 close_mosaic: 0

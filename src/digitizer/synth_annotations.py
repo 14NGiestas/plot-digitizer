@@ -27,10 +27,6 @@ def _add_annotation_layers(
     use_log_x: bool,
     x_norm_to_data: Callable[[float], float],
     y_norm_to_data: Callable[[float], float],
-    render_vbar_mask_fn: Any,
-    render_hbar_mask_fn: Any,
-    render_arrow_mask_fn: Any,
-    render_error_bar_mask_fn: Any,
     vbar_count_range: tuple[int, int] | None = None,
     hbar_count_range: tuple[int, int] | None = None,
     arrow_count_range: tuple[int, int] | None = None,
@@ -49,20 +45,14 @@ def _add_annotation_layers(
         x_pos = rng.uniform(0.1, 0.9)
         style = {"linewidth": rng.uniform(1.0, 3.0), "linestyle": "-"}
         ax.axvline(x=x_norm_to_data(x_pos), ymin=0, ymax=1, color="black", linewidth=style["linewidth"], linestyle=style["linestyle"])
-        polygon = _mask_to_yolo_polygon(render_vbar_mask_fn(fig_size, dpi, x_pos, y_range, style["linewidth"], style))
-        if polygon:
-            label_lines.append("1 " + " ".join(f"{value:.6f}" for value in polygon))
-            annotation_descriptors.append({"type": "vbar", "class_id": 1, "x_pos": x_pos, "description": f"high_symmetry_point_{vbar_idx}"})
+        annotation_descriptors.append({"type": "vbar", "class_id": 1, "x_pos": x_pos, "description": f"high_symmetry_point_{vbar_idx}", "style": style})
 
     for hbar_idx in range(int(rng.integers(eff_hbar[0], eff_hbar[1] + 1))):
         y_pos_norm = rng.uniform(0.1, 0.9)
         y_pos = y_range[0] + y_pos_norm * (y_range[1] - y_range[0])
         style = {"linewidth": rng.uniform(1.0, 2.5), "linestyle": "--"}
         ax.axhline(y=y_pos, xmin=0, xmax=1, color="black", linewidth=style["linewidth"], linestyle=style["linestyle"])
-        polygon = _mask_to_yolo_polygon(render_hbar_mask_fn(fig_size, dpi, y_pos_norm, x_range, style["linewidth"], style, x_scale="log" if use_log_x else "linear"))
-        if polygon:
-            label_lines.append("2 " + " ".join(f"{value:.6f}" for value in polygon))
-            annotation_descriptors.append({"type": "hbar", "class_id": 2, "y_pos": y_pos, "description": f"reference_line_{hbar_idx}"})
+        annotation_descriptors.append({"type": "hbar", "class_id": 2, "y_pos": y_pos, "y_pos_norm": y_pos_norm, "description": f"reference_line_{hbar_idx}", "style": style})
 
     for arrow_idx in range(int(rng.integers(eff_arrow[0], eff_arrow[1] + 1))):
         start = (rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8))
@@ -74,10 +64,7 @@ def _add_annotation_layers(
             mid_x = x_norm_to_data((start[0] + end[0]) / 2.0)
             mid_y = y_norm_to_data((start[1] + end[1]) / 2.0)
             ax.text(mid_x, mid_y, label_text, fontsize=float(rng.uniform(7.0, 11.0)), color="black", ha="left", va="bottom")
-        polygon = _mask_to_yolo_polygon(render_arrow_mask_fn(fig_size, dpi, start, end, style))
-        if polygon:
-            label_lines.append("3 " + " ".join(f"{value:.6f}" for value in polygon))
-            annotation_descriptors.append({"type": "arrow", "class_id": 3, "start": start, "end": end, "description": f"annotation_arrow_{arrow_idx}"})
+        annotation_descriptors.append({"type": "arrow", "class_id": 3, "start": start, "end": end, "description": f"annotation_arrow_{arrow_idx}", "style": style})
 
     for eb_idx in range(int(rng.integers(eff_error[0], eff_error[1] + 1))):
         x_pos = rng.uniform(0.1, 0.9)
@@ -85,9 +72,6 @@ def _add_annotation_layers(
         y_err = rng.uniform(0.05, 0.2)
         style = {"linewidth": rng.uniform(1.0, 2.0), "cap_width": 0.02}
         ax.errorbar(x_norm_to_data(x_pos), y_norm_to_data(y_pos), yerr=float(y_err * (y_range[1] - y_range[0])), fmt="none", ecolor="black", elinewidth=style["linewidth"], capsize=style["cap_width"] * fig_size[0] * dpi)
-        polygon = _mask_to_yolo_polygon(render_error_bar_mask_fn(fig_size, dpi, x_pos, y_pos, y_err, style))
-        if polygon:
-            label_lines.append("4 " + " ".join(f"{value:.6f}" for value in polygon))
-            annotation_descriptors.append({"type": "error_bar", "class_id": 4, "x_pos": x_pos, "y_pos": y_pos, "y_err": y_err, "description": f"error_bar_{eb_idx}"})
+        annotation_descriptors.append({"type": "error_bar", "class_id": 4, "x_pos": x_pos, "y_pos": y_pos, "y_err": y_err, "description": f"error_bar_{eb_idx}", "style": style})
 
     return label_lines, annotation_descriptors

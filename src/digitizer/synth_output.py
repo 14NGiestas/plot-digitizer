@@ -253,8 +253,6 @@ def _save_synthetic_outputs(
     curve_descriptors: list[dict[str, Any]],
     annotation_descriptors: list[dict[str, Any]],
 ) -> None:
-    fig.tight_layout()
-    fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     axis_bbox = ax.get_window_extent(renderer=renderer)
     width_px, height_px = fig.canvas.get_width_height()

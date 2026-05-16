@@ -13,6 +13,7 @@ cos_lr: true
 warmup_epochs: 5.0
 patience: 80
 
+rect: true
 mosaic: 0.0
 close_mosaic: 0
 mixup: 0.0

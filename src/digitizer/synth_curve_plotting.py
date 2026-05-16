@@ -111,9 +111,6 @@ def _add_curve_layers(
     use_log_x: bool,
     raw_curves: list[tuple[np.ndarray, str]],
     rng: np.random.Generator,
-    fig_size: tuple[float, float],
-    dpi: int,
-    render_curve_mask_fn: Any,
     show_legend: bool = False,
 ) -> tuple[list[pd.DataFrame], list[dict[str, Any]], list[str]]:
     colors = ["tab:red", "tab:blue", "tab:green", "tab:purple", "tab:orange", "tab:cyan"]
@@ -131,10 +128,6 @@ def _add_curve_layers(
         dataset_id = f"dataset_{curve_index}"
         curve_descriptors.append({"dataset_id": dataset_id, "curve_type": curve_type, **style})
         ground_truth_frames.append(pd.DataFrame({"dataset_id": dataset_id, "x_real": x_values, "y_real": y_values}))
-        mask = render_curve_mask_fn(fig_size, dpi, x_values, y_values, x_range, y_range, style, x_scale="log" if use_log_x else "linear")
-        polygon = _mask_to_yolo_polygon(mask)
-        if polygon:
-            label_lines.append("0 " + " ".join(f"{value:.6f}" for value in polygon))
     if show_legend:
         ax.legend()
     return ground_truth_frames, curve_descriptors, label_lines
