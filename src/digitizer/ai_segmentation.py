@@ -9,6 +9,23 @@ import numpy as np
 
 from .constants import LOGGER, MIN_COMPONENT_PIXELS
 from .models import PlotBox, SegmentationResult
+from .annotation_io import CLASS_MAPPING
+
+def _select_digitization_segmentations(
+    segmentations: list[SegmentationResult],
+) -> list[SegmentationResult]:
+    """Keep only curve masks when AI predictions include class IDs."""
+    if not segmentations:
+        return []
+    curve_class_id = CLASS_MAPPING.get("curve")
+    if curve_class_id is None or all(seg.class_id is None for seg in segmentations):
+        return segmentations
+    curve_segmentations = [
+        segmentation
+        for segmentation in segmentations
+        if segmentation.class_id in (None, curve_class_id)
+    ]
+    return curve_segmentations
 
 def run_ai_segmentation(
     image: np.ndarray,

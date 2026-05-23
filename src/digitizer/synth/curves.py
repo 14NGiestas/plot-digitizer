@@ -6,7 +6,7 @@ import math
 
 import numpy as np
 
-from .constants import (
+from ..constants import (
     DAMPED_AMPLITUDE_RANGE,
     DAMPED_DECAY_RANGE,
     DAMPED_FREQUENCY_RANGE,

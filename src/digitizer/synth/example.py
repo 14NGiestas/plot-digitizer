@@ -9,13 +9,13 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .constants import DEFAULT_DPI, DENSE_CURVE_COUNT_RANGE, LEGEND_PROBABILITY, LOG_X_MIN, LOG_X_PROBABILITY
-from .math_utils import _norm_to_scale
-from .synth_annotations import _add_annotation_layers
-from .synth_curve_plotting import _add_curve_layers, _configure_plot_curves, _create_plot_axes
-from .synth_degrade import _apply_degradation_filters
-from .synth_output import _save_synthetic_outputs
-from .synth_render import _mask_to_yolo_polygon, _render_arrow_mask, _render_curve_mask, _render_error_bar_mask, _render_hbar_mask, _render_vbar_mask
+from ..constants import DEFAULT_DPI, DENSE_CURVE_COUNT_RANGE, LEGEND_PROBABILITY, LOG_X_MIN, LOG_X_PROBABILITY
+from ..math_utils import _norm_to_scale
+from .annotations import _add_annotation_layers
+from .curve_plotting import _add_curve_layers, _configure_plot_curves, _create_plot_axes
+from .degrade import _apply_degradation_filters
+from .output import _save_synthetic_outputs
+from .render import _mask_to_yolo_polygon, _render_arrow_mask, _render_curve_mask, _render_error_bar_mask, _render_hbar_mask, _render_vbar_mask
 
 
 def _resolve_difficulty_settings(difficulty: int) -> dict[str, Any] | None:
