@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Distribute samples across difficulty levels 1–4.")
 
     # ── train (= curriculum) ──────────────────────────────────────────────
-    trn = subparsers.add_parser("train", help="Run curriculum learning with MLflow tracking.")
+    trn = subparsers.add_parser("train", help="Run curriculum learning or a single-stage YOLO segmentation training job.")
     trn.add_argument("--output-dir", type=Path, default=Path("runs"))
     trn.add_argument("--samples-per-stage", type=int, default=500)
     trn.add_argument("--seed", type=int, default=42)
@@ -53,6 +53,25 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Show weight chain without running.")
     trn.add_argument("--sync", action="store_true",
                      help="Scan checkpoints and update progress.json.")
+    # Backward-compatible single-stage flags (deprecated; use curriculum flags above)
+    trn.add_argument("--dataset-dir", type=Path, default=None,
+                     help="Dataset directory for single-stage training (deprecated; prefer curriculum).")
+    trn.add_argument("--weights", default=None,
+                     help="YOLO weights for single-stage training (deprecated; prefer curriculum).")
+    trn.add_argument("--imgsz", type=int, default=640,
+                     help="Image size for single-stage training (deprecated; prefer curriculum).")
+    trn.add_argument("--hyp-yaml", type=Path, default=None,
+                     help="Ultralytics training override YAML (deprecated; prefer curriculum).")
+    trn.add_argument("--execute", action="store_true",
+                     help="Run single-stage training immediately (deprecated; prefer curriculum).")
+    trn.add_argument("--amp", action="store_true", default=False,
+                     help="Enable Automatic Mixed Precision during training.")
+
+    # ── validate ──────────────────────────────────────────────────────────
+    val = subparsers.add_parser("validate", help="Validate a digitized CSV against ground truth.")
+    val.add_argument("--prediction-csv", type=Path, required=True)
+    val.add_argument("--truth-csv", type=Path, required=True)
+    val.add_argument("--output-json", type=Path, default=None)
 
     # ── digitize ──────────────────────────────────────────────────────────
     dig = subparsers.add_parser("digitize", help="Digitize one or more plot images.")

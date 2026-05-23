@@ -14,7 +14,7 @@ from .cli_support import _set_matplotlib_backend, configure_logging
 from .constants import LOGGER
 from .digitize_workflow import digitize_image
 from .image_ops import discover_images
-from .interactive_axis import _format_reference_pair_cli_value, interactive_reference_selection
+from .interactive_axis import _format_reference_pair_cli_value
 from .models import AxisCalibration, AxisReferencePair, DigitizeResult, PlotBox, SegmentationResult
 from .parser import _json_default, _parse_positive_int, build_parser
 from .plotting import build_replot_frame, create_overlay, create_replot
@@ -65,6 +65,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.sync:
             _sync_curriculum_progress(args.output_dir)
             return 0
+        if args.dataset_dir is not None:
+            # Backward-compatible single-stage training path
+            plan = run_training(
+                args.dataset_dir,
+                args.output_dir,
+                args.epochs,
+                args.imgsz,
+                args.weights or "yolo11s-seg.pt",
+                args.batch,
+                args.execute,
+                args.hyp_yaml,
+                workers=args.workers,
+                amp=args.amp,
+            )
+            print(json.dumps(plan, indent=2, default=_json_default))
+            return 0
         _run_curriculum(
             output_dir=args.output_dir,
             samples_per_stage=args.samples_per_stage,
@@ -76,6 +92,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             resume=args.resume,
         )
         return 0
+
+    if args.command == "validate":
+        from .validation import validate_digitization
+        summary = validate_digitization(args.prediction_csv, args.truth_csv, args.output_json)
+        print(json.dumps(summary, indent=2))
+        return 0 if summary["passed_under_5_percent"] else 1
 
     if args.command == "digitize":
         images = discover_images(args.inputs)

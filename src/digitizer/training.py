@@ -106,8 +106,8 @@ def run_training(
             _torch.set_num_threads(workers)
             try:
                 _torch.set_num_interop_threads(workers)
-            except RuntimeError:
-                pass
+            except RuntimeError as exc:
+                LOGGER.debug("Could not set interop threads to %d: %s", workers, exc)
         try:
             from ultralytics import YOLO
         except ImportError as exc:
@@ -163,6 +163,7 @@ def _log_to_mlflow(run_id: str, project_dir: str, stage_name: str, input_weights
     client = mlflow.tracking.MlflowClient()
 
     try:
+        client.log_param(run_id, "input_weights", input_weights)
         client.log_artifact(run_id, str(best_pt), artifact_path=artifact_path)
         LOGGER.info("  [MLflow] Logged %s/best.pt", artifact_path)
 

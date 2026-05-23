@@ -54,7 +54,7 @@ def _run_segmentation(
             segmentations = _select_digitization_segmentations(segmentations)
     else:
         from .cv_segmentation import run_cv_segmentation
-        segmentations = run_cv_segmentation(image, plot_box, conf_threshold)
+        segmentations = run_cv_segmentation(image, plot_box)
 
     if not segmentations:
         raise RuntimeError(
