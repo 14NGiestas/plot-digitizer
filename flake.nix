@@ -75,6 +75,7 @@
             numpy
             opencv4
             pandas
+            pyyaml
             scikit-image
             scikit-learn
             scipy
@@ -109,6 +110,7 @@
           numpy
           opencv4
           pandas
+          pyyaml
           pytest
           scikit-image
           scikit-learn
