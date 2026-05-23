@@ -278,8 +278,9 @@ def _run_curriculum(
 
         if i < start_idx:
             if stage_key in progress:
+                weights = progress[stage_key].get("weights", weights)
                 stage_plan["status"] = "skipped (already done)"
-                stage_plan["weights"] = progress[stage_key].get("weights", weights)
+                stage_plan["weights"] = weights
             else:
                 stage_plan["status"] = "skipped (before start)"
             plan["stages"].append(stage_plan)
