@@ -64,8 +64,10 @@ def run_training(
     dataset_yaml = (dataset_dir / "dataset.yaml").resolve()
     if not dataset_yaml.exists():
         raise FileNotFoundError(f"Dataset config not found: {dataset_yaml}")
-    hyp_overrides = _load_hyp_overrides(hyp_yaml)
     hyp_path = hyp_yaml.resolve() if hyp_yaml is not None else None
+    if hyp_path is not None and not hyp_path.exists():
+        raise FileNotFoundError(f"Hyperparameter config not found: {hyp_path}")
+    hyp_overrides = _load_hyp_overrides(hyp_path)
     training_plan = {
         "dataset": str(dataset_yaml),
         "weights": weights,

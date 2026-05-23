@@ -285,13 +285,15 @@ def _run_curriculum(
             plan["stages"].append(stage_plan)
             continue
 
-        has_checkpoint = _find_stage_weights(train_dir) is not None
+        checkpoint_weights = _find_stage_weights(train_dir)
+        has_checkpoint = checkpoint_weights is not None
         is_done = stage_key in progress and progress[stage_key].get("status") == "done"
 
         if is_done and has_checkpoint and not from_stage:
             LOGGER.info("✓ %s already completed, skipping", stage_key)
+            weights = progress[stage_key].get("weights") or checkpoint_weights or weights
             stage_plan["status"] = "skipped (already done)"
-            stage_plan["weights"] = progress[stage_key].get("weights", weights)
+            stage_plan["weights"] = weights
             plan["stages"].append(stage_plan)
             continue
 

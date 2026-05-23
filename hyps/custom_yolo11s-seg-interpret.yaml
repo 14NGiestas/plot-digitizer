@@ -1,6 +1,6 @@
 # Ultralytics YOLOv11 Architecture
 # Custom: Added InterpretationProjection layer
-nc: 80  # number of classes
+nc: 15  # number of classes
 scales:
   s: [0.33, 0.50, 1024] # [depth, width, max_channels]
 

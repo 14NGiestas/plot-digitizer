@@ -165,21 +165,20 @@ class DigitizerWorkflowTests(unittest.TestCase):
                 patch("digitizer.digitize_workflow.preprocess_image", return_value=(processed_gray, {})),
                 patch("digitizer.digitize_workflow.resolve_plot_box", return_value=plot_box),
                 patch("digitizer.digitize_workflow.calibrate_axes", return_value=(calibration, {})),
-                patch("digitizer.digitize_workflow._run_segmentation") as mock_seg,
+                patch("digitizer.digitize_workflow.run_ai_segmentation", return_value=[non_curve, curve]),
+                patch("digitizer.digitize_workflow.extract_curve_points") as mock_extract,
+                patch("digitizer.digitize_workflow.convert_points", side_effect=lambda frame, *_: frame),
                 patch("digitizer.digitize_workflow.build_replot_frame", return_value=replot_frame),
                 patch("digitizer.digitize_workflow.create_replot"),
                 patch("digitizer.digitize_workflow.create_overlay") as mock_overlay,
                 patch("digitizer.digitize_workflow._segmentations_to_yolo_label", return_value="0 0.1 0.1 0.9 0.9"),
             ):
-                mock_seg.return_value = (
-                    pd.DataFrame({
-                        "dataset_id": ["curve_a"],
-                        "x_real": [1.0], "y_real": [0.0],
-                        "x_px": [10.0], "y_px": [20.0],
-                        "confidence": [0.88]
-                    }),
-                    [curve],
-                )
+                mock_extract.return_value = pd.DataFrame({
+                    "dataset_id": ["curve_a"],
+                    "x_real": [1.0], "y_real": [0.0],
+                    "x_px": [10.0], "y_px": [20.0],
+                    "confidence": [0.88]
+                })
                 result = digitizer.digitize_image(
                     image_path=image_path,
                     output_dir=output_dir,
@@ -190,11 +189,13 @@ class DigitizerWorkflowTests(unittest.TestCase):
                     x_scale="linear",
                     y_scale="linear",
                     invert_y=False,
-                    weights=None,
+                    weights="fake.pt",
                     conf_threshold=0.25,
                     create_overlay_image=True,
                 )
 
+            self.assertEqual(mock_extract.call_count, 1)
+            self.assertEqual(mock_extract.call_args.args[0].class_id, 0)
             overlay_segmentations = mock_overlay.call_args.args[2]
             self.assertEqual(len(overlay_segmentations), 1)
             self.assertEqual(overlay_segmentations[0].class_id, 0)
@@ -637,6 +638,32 @@ class DigitizerWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(plan["cfg"], str(hyp_yaml.resolve()))
 
+    def test_run_training_raises_for_missing_hyp_yaml(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dataset_dir = root / "synthetic"
+            output_dir = root / "runs"
+            missing_hyp = root / "missing.yaml"
+            digitizer.generate_synthetic_dataset(
+                dataset_dir,
+                count=1,
+                seed=3,
+                image_format="png",
+                plot_type="general",
+            )
+
+            with self.assertRaisesRegex(FileNotFoundError, "Hyperparameter config not found:"):
+                digitizer.run_training(
+                    dataset_dir=dataset_dir,
+                    output_dir=output_dir,
+                    epochs=5,
+                    imgsz=640,
+                    weights="yolo11s-seg.pt",
+                    batch=2,
+                    execute=False,
+                    hyp_yaml=missing_hyp,
+                )
+
     def test_run_training_execute_applies_workers_to_torch_threads_and_trainer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -692,6 +719,45 @@ class DigitizerWorkflowTests(unittest.TestCase):
             # amp defaults to False
             self.assertFalse(calls["train_kwargs"]["amp"])
             self.assertFalse(plan["amp"])
+
+    def test_run_curriculum_skipped_stage_updates_weight_chain(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "runs"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            progress_path = output_dir / "progress.json"
+            progress_path.write_text(json.dumps({"stage1": {"status": "done", "weights": "/tmp/progress-stage1.pt"}}))
+            run_calls: list[dict[str, object]] = []
+
+            def fake_find_stage_weights(train_dir: Path) -> str | None:
+                stage_name = train_dir.parent.name
+                if stage_name == "stage1":
+                    return "/tmp/checkpoint-stage1.pt"
+                return None
+
+            def fake_run_training(**kwargs: object) -> dict[str, object]:
+                run_calls.append(kwargs)
+                return {"ok": True}
+
+            with (
+                patch("digitizer._setup_mlflow", return_value=None),
+                patch("digitizer.generate_synthetic_dataset"),
+                patch("digitizer.training._load_hyp_overrides", return_value={}),
+                patch("digitizer._find_stage_weights", side_effect=fake_find_stage_weights),
+                patch("digitizer.run_training", side_effect=fake_run_training),
+            ):
+                digitizer._run_curriculum(
+                    output_dir=output_dir,
+                    samples_per_stage=1,
+                    seed=1,
+                    epochs=1,
+                    batch=1,
+                    workers=1,
+                    resume=False,
+                )
+
+            self.assertGreaterEqual(len(run_calls), 1)
+            self.assertEqual(run_calls[0]["weights"], "/tmp/progress-stage1.pt")
 
     def test_calibrate_axes_uses_reference_points_for_non_extreme_axis_points(self) -> None:
         image_path = Path("nonexistent.png")

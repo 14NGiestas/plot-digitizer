@@ -11,33 +11,36 @@ export OMP_NUM_THREADS=$WORKERS
 export MKL_NUM_THREADS=$WORKERS
 
 echo "==> Syncing progress from existing checkpoints…"
-nix develop .#rocm -c digitizer train --sync
+nix develop .#rocm -c digitizer train --sync --output-dir "$OUTPUT"
 
 echo ""
 echo "==> Curriculum plan:"
-nix develop .#rocm -c digitizer train --chain-info --resume
+nix develop .#rocm -c digitizer train --chain-info --resume --output-dir "$OUTPUT"
 
 echo ""
 echo "==> Starting curriculum pipeline…"
 echo "    samples=$SAMPLES  workers=$WORKERS"
 
-CMD="digitizer train \
-  --output-dir ${OUTPUT} \
-  --samples-per-stage ${SAMPLES} \
-  --workers ${WORKERS} \
-  --resume"
+CMD=(
+  digitizer train
+  --output-dir "$OUTPUT"
+  --samples-per-stage "$SAMPLES"
+  --workers "$WORKERS"
+  --resume
+)
 
 if [ -n "$EPOCHS" ]; then
-  CMD="$CMD --epochs $EPOCHS"
+  CMD+=(--epochs "$EPOCHS")
 fi
 if [ -n "$BATCH" ]; then
-  CMD="$CMD --batch $BATCH"
+  CMD+=(--batch "$BATCH")
 fi
 
-nix develop .#rocm -c sh -c "$CMD"
+nix develop .#rocm -c "${CMD[@]}"
 
 echo ""
 echo "Training complete. Best model: ${OUTPUT}/stage4/train/seg*/weights/best.pt"
 echo "MLflow UI: mlflow ui --backend-store-uri file:${OUTPUT}/mlruns"
-) || echo "Press [Enter] to continue..."
+) || echo "Training failed."
+echo "Press [Enter] to continue..."
 read

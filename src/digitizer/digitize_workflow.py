@@ -41,7 +41,7 @@ def _run_segmentation(
     image_path: Path,
     weights: str | None,
     conf_threshold: float,
-    workers: int,
+    workers: int | None,
     imgsz: int | None,
 ) -> tuple[pd.DataFrame, list[SegmentationResult]]:
     """Run segmentation (AI or CV fallback) and extract digitized points."""
@@ -119,7 +119,7 @@ def digitize_image(
 
     converted, segmentations = _run_segmentation(
         image, plot_box, calibration, image_path,
-        weights, conf_threshold, workers or 1, imgsz,
+        weights, conf_threshold, workers, imgsz,
     )
 
     dest_image = images_dir / image_path.name
