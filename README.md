@@ -28,8 +28,16 @@ nix develop --command sh -c "python -m unittest discover -s tests -p 'test_*.py'
 ```bash
 uv venv
 source .venv/bin/activate
+
+# Core CLI + tests
 uv pip install -e ".[dev]"
+
+# AI-enabled local install (CPU)
+uv pip install -e ".[dev,ai-cpu]"
 ```
+
+`PyYAML` is included in the core dependency set, so `digitizer train --hyp-yaml ...`
+works in both the default install and the Nix package build.
 
 ## Core commands
 
