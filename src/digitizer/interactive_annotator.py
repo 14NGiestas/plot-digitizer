@@ -28,9 +28,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib as mpl
 
+import pandas as pd
+
 from .annotation_io import load_training_sample_annotations, save_training_sample
 from .constants import LOGGER
 from .image_ops import load_image
+from .models import AxisCalibration, PlotBox
+from .points import convert_points
 
 _MODE_COLORS: dict[str, str] = {
     "vbar": "mediumpurple",
@@ -173,12 +177,18 @@ class _AnnotatorSession:
         needed = _POINTS_NEEDED[self._mode]
         min_pts = 2 if needed is None else needed
         if len(self._current) >= min_pts:
+            if self._mode == "curve":
+                extracted = self._extract_painted_curve()
+                if not extracted:
+                    extracted = list(self._current)
+            else:
+                extracted = list(self._current)
             self._committed.append({
                 "type": self._mode,
-                "points": list(self._current),
+                "points": extracted,
                 "line_width": self._line_width,
             })
-            LOGGER.debug("Committed %s annotation (%d pts)", self._mode, len(self._current))
+            LOGGER.debug("Committed %s annotation (%d pts)", self._mode, len(extracted))
         self._current = []
 
     # ------------------------------------------------------------------ drawing
@@ -343,6 +353,131 @@ class _AnnotatorSession:
         return list(self._committed) if self._do_save else []
 
 
+def _prompt_calibration_and_export_csv(
+    image_path: Path,
+    annotations: list[dict[str, Any]],
+    output_dir: Path,
+    image_width: int,
+    image_height: int,
+) -> Path | None:
+    """Prompt user for real-world axis values and produce a digitized CSV."""
+    x_axis = next((a for a in annotations if a["type"] == "x_axis"), None)
+    y_axis = next((a for a in annotations if a["type"] == "y_axis"), None)
+    if not x_axis or not y_axis:
+        LOGGER.info("No axis annotations found — skipping CSV export.")
+        return None
+
+    x_pixels = sorted(p[0] for p in x_axis["points"])
+    y_pixels = sorted(p[1] for p in y_axis["points"])
+
+    print("\n── Axis calibration ──")
+    x_left = float(input(f"  Real X value at pixel x={x_pixels[0]:.1f} (left): ").strip())
+    x_right = float(input(f"  Real X value at pixel x={x_pixels[1]:.1f} (right): ").strip())
+    y_bottom = float(input(f"  Real Y value at pixel y={y_pixels[1]:.1f} (bottom): ").strip())
+    y_top = float(input(f"  Real Y value at pixel y={y_pixels[0]:.1f} (top): ").strip())
+
+    # Convert entered values to canonical min/max
+    x_min, x_max = min(x_left, x_right), max(x_left, x_right)
+    y_min, y_max = min(y_bottom, y_top), max(y_bottom, y_top)
+
+    # Build plot box from plot_area annotation or axis bounds
+    plot_area = next((a for a in annotations if a["type"] == "plot_area"), None)
+    if plot_area:
+        (px1, py1), (px2, py2) = plot_area["points"][0], plot_area["points"][1]
+        plot_box = PlotBox(
+            left=int(min(px1, px2)),
+            top=int(min(py1, py2)),
+            right=int(max(px1, px2)),
+            bottom=int(max(py1, py2)),
+        )
+    else:
+        xs = [p[0] for a in annotations if a["type"] == "x_axis" for p in a["points"]]
+        ys = [p[1] for a in annotations if a["type"] == "y_axis" for p in a["points"]]
+        plot_box = PlotBox(
+            left=int(min(xs)),
+            top=int(min(ys)),
+            right=int(max(xs)),
+            bottom=int(max(ys)),
+        )
+
+    # Build calibration from reference pairs
+    x_reference = ((x_pixels[0], x_left), (x_pixels[1], x_right))
+    y_reference = ((y_pixels[0], y_bottom), (y_pixels[1], y_top))
+    calibration = AxisCalibration(
+        x_min=x_min,
+        x_max=x_max,
+        y_min=y_min,
+        y_max=y_max,
+        x_pixel_min=float(x_pixels[0]),
+        x_pixel_max=float(x_pixels[1]),
+        y_pixel_bottom=float(y_pixels[1]),
+        y_pixel_top=float(y_pixels[0]),
+    )
+
+    # Collect curve annotation points
+    rows = []
+    for i, ann in enumerate(annotations):
+        if ann["type"] != "curve":
+            continue
+        for x_px, y_px in ann["points"]:
+            rows.append({
+                "dataset_id": f"curve_{i}",
+                "x_px": float(x_px),
+                "y_px": float(y_px),
+                "confidence": 1.0,
+                "segmentation_method": "manual_annotation",
+            })
+
+    if not rows:
+        LOGGER.info("No curve annotations found — skipping CSV export.")
+        return None
+
+    points_df = pd.DataFrame(rows)
+    converted = convert_points(points_df, calibration, plot_box)
+
+    csv_dir = output_dir / "csv"
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = csv_dir / f"{image_path.stem}.csv"
+    converted.to_csv(csv_path, index=False)
+    LOGGER.info("Digitized CSV saved → %s", csv_path)
+
+    # Persist calibration ranges back into the annotations JSON
+    ann_path = output_dir / "annotations" / f"{image_path.stem}.json"
+    if ann_path.exists():
+        try:
+            data = json.loads(ann_path.read_text())
+            data["x_range"] = [x_min, x_max]
+            data["y_range"] = [y_min, y_max]
+            data["calibration"] = {
+                "x_reference": [
+                    [x_pixels[0], x_left],
+                    [x_pixels[1], x_right],
+                ],
+                "y_reference": [
+                    [y_pixels[0], y_bottom],
+                    [y_pixels[1], y_top],
+                ],
+            }
+            ann_path.write_text(json.dumps(data, indent=2))
+        except Exception as exc:
+            LOGGER.warning("Could not update annotation file with ranges: %s", exc)
+
+    # Also update the sidecar metadata so digitizer digitize can auto-load
+    meta_path = output_dir / "images" / f"{image_path.stem}.metadata.json"
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text())
+            meta["x_range"] = [x_min, x_max]
+            meta["y_range"] = [y_min, y_max]
+            meta_path.write_text(json.dumps(meta, indent=2))
+        except Exception as exc:
+            LOGGER.warning("Could not update metadata sidecar with ranges: %s", exc)
+
+    print(f"  → CSV: {csv_path}")
+    print(f"  → Ranges stored in annotation file for reuse\n")
+    return csv_path
+
+
 def interactive_annotation_session(
     image_path: Path,
     output_dir: Path,
@@ -404,6 +539,15 @@ def interactive_annotation_session(
     LOGGER.info(
         "Saved %d annotation(s) → %s", len(annotations), result["label_path"]
     )
+
+    _prompt_calibration_and_export_csv(
+        image_path=image_path,
+        annotations=annotations,
+        output_dir=output_dir,
+        image_width=w,
+        image_height=h,
+    )
+
     return result
 
 

@@ -1,21 +1,10 @@
 # plot-digitizer
 
-Automatic AI-assisted plot digitizer with synthetic-data generation, curriculum training, MLflow tracking, digitization, validation, and annotation tools.
+Automatic AI-assisted plot digitizer (synthetic data generation, curriculum training, AI inference, manual annotation).
 
-## Recommended workflow
+## Quick start
 
-The current recommended training flow is the built-in curriculum pipeline driven by `digitizer train`. It:
-
-- generates stage datasets automatically
-- chains weights across stages 1 → 4
-- uses the checked-in curriculum presets from `hyps/curriculum_stage*.yml`
-- logs MLflow data when `mlflow` is installed in the active environment
-
-The older single-stage `digitizer train --dataset-dir ... --execute` path still exists for compatibility, but it is deprecated.
-
-## Quick start (Nix, recommended)
-
-### 1. Enter a dev shell
+### Nix (recommended)
 
 ```bash
 # CPU
@@ -28,149 +17,109 @@ nix develop .#rocm
 nix develop .#cuda
 ```
 
-### 2. Install MLflow in the active environment
-
-MLflow tracking is optional at runtime, but recommended for the curriculum workflow:
+Run tests:
 
 ```bash
-uv pip install mlflow
+python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-### 3. Run the test suite
-
-```bash
-nix develop --command sh -c "python -m unittest discover -s tests -p 'test_*.py' -v"
-```
-
-### 4. Inspect the curriculum plan
-
-```bash
-digitizer train --status --output-dir runs
-digitizer train --chain-info --resume --output-dir runs
-```
-
-### 5. Run curriculum training
-
-This is the main training entrypoint. It resumes from existing checkpoints when possible and writes MLflow data under `runs/mlruns` when MLflow is installed.
-
-```bash
-digitizer train \
-  --output-dir runs \
-  --samples-per-stage 500 \
-  --workers 6 \
-  --resume
-```
-
-Useful overrides:
-
-```bash
-digitizer train \
-  --output-dir runs \
-  --samples-per-stage 500 \
-  --workers 6 \
-  --epochs 50 \
-  --batch 16 \
-  --resume
-```
-
-### 6. Open MLflow
-
-```bash
-mlflow ui --backend-store-uri file:runs/mlruns
-```
-
-### 7. Digitize images with the latest trained weights
-
-For a fresh curriculum run, stage 4 weights land under `runs/stage4/train/seg*/weights/best.pt`.
-
-```bash
-BEST_RUN="$(ls -dt runs/stage4/train/seg* | head -n1)"
-digitizer digitize runs/stage4/data/images \
-  --output-dir digitized \
-  --weights "$BEST_RUN/weights/best.pt" \
-  --overlay
-```
-
-When digitizing generated synthetic images, the metadata sidecars in `runs/stage4/data/images` provide axis ranges automatically.
-
-### 8. Validate against ground truth
-
-```bash
-digitizer validate \
-  --prediction-csv digitized/csv/plot_0000.csv \
-  --truth-csv runs/stage4/data/csv/plot_0000.csv
-```
-
-`validate` exits with a non-zero status when the result does not pass the built-in threshold, so it can be used in scripts and CI.
-
-## Local install with `uv`
-
-If you are not using Nix, the simplest verified local setup is the CPU path:
+### Local install (uv)
 
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -e ".[dev,ai-cpu]"
-uv pip install mlflow
+uv pip install -e '.[dev,ai]'   # full (includes YOLO/torch)
+uv pip install -e '.[dev]'      # CPU-only
 ```
 
-`PyYAML` is included in the core dependency set, so YAML-backed training config loading works in the standard install.
+## CLI commands
 
-## Current CLI commands
+| Command | Purpose |
+|---|---|
+| `digitizer generate` | Generate synthetic plots + YOLO labels + CSV + metadata |
+| `digitizer train` | Full 4-stage curriculum (generate data → train → chain weights → MLflow) |
+| `digitize digitize <INPUTS...>` | AI segmentation → axis calibration → CSV export |
+| `digitizer annotate <IMAGE>` | Interactive matplotlib GUI for manual YOLO annotation |
 
-### Curriculum training (recommended)
-
-```bash
-# Show detected progress
-digitizer train --status --output-dir runs
-
-# Show which weights will be chained
-digitizer train --chain-info --resume --output-dir runs
-
-# Re-scan checkpoints and rebuild progress.json
-digitizer train --sync --output-dir runs
-
-# Run or resume the curriculum pipeline
-digitizer train --output-dir runs --samples-per-stage 500 --workers 6 --resume
-```
-
-### Synthetic dataset generation
-
-Use this when you want a standalone dataset without running the full curriculum trainer:
+### Generate
 
 ```bash
-# Fixed difficulty
+# Basic
+digitizer generate --output-dir synthetic-data --count 200
+
+# Per-difficulty
 digitizer generate --output-dir synthetic-stage1 --count 200 --difficulty 1
 
-# Balanced curriculum-style mix
+# Balanced curriculum mix (round-robin stages 1→2→3→4)
 digitizer generate --output-dir synthetic-curriculum --count 800 --curriculum
 ```
 
-### Digitization
+### Train (full curriculum)
+
+`digitizer train` runs all 4 stages automatically, chaining `best.pt` between stages:
 
 ```bash
-# Generated images: axis ranges come from metadata sidecars
-digitizer digitize train-dataset/images --output-dir digitized --overlay
+# Full run
+digitizer train --output-dir curriculum-run
 
-# External images: provide calibration explicitly
-digitizer digitize my-plot.png \
-  --output-dir digitized \
-  --x-range "0,10" \
-  --y-range "-2,2" \
-  --weights model.pt \
-  --overlay
+# Resume from last completed stage
+digitizer train --output-dir curriculum-run --resume
+
+# Check progress / plan only
+digitizer train --output-dir curriculum-run --status
+digitizer train --output-dir curriculum-run --chain-info --resume
+
+# Sync existing checkpoints into progress.json
+digitizer train --output-dir curriculum-run --sync
 ```
 
-Notes:
+Training presets live in `hyps/` (stage1–4). MLflow tracks locally at `file:<output-dir>/mlruns`.
 
-- `--weights` accepts `.pt` or `.onnx`
-- without `--weights`, `digitizer digitize` falls back to the CV segmentation path
-- external plots need axis calibration from `--x-range` / `--y-range`, `--x-reference` / `--y-reference`, or a metadata sidecar
-
-### Annotation
+### Digitize
 
 ```bash
-digitizer annotate my-plot.png --output-dir train-dataset
+# AI segmentation (with trained weights)
+digitizer digitize bandstructure_target.png --output digitized_data.json \
+  --weights curriculum-run/stage4/train/seg*/weights/best.pt
+
+# OpenCV fallback (no weights)
+digitizer digitize bandstructure_target.png --output digitized_data.json
+
+# Known axis calibration
+digitizer digitize plot.png --output-dir digitized \
+  --x-reference "100:0,500:10" --y-reference "80:0,420:50"
+
+# Batch directory
+digitizer digitize plots/ --output-dir digitized --overlay
 ```
 
-This opens the interactive annotation workflow and writes image, labels, and metadata sidecars.
+### Annotate
+
+```bash
+digitizer annotate my_plot.png --output-dir train-dataset
+```
+
+Opens an interactive matplotlib GUI to draw polygon annotations and save YOLO-format labels.
+
+## Useful options
+
+- `--weights` supports `.pt` or `.onnx`. Without weights, uses OpenCV fallback.
+- `--x-reference` / `--y-reference`: `"px0:real0,px1:real1"` for known axis points.
+- `--x-scale` / `--y-scale`: `linear` (default) or `log`.
+- `--invert-y`: flip Y axis direction.
+- `--overlay`: write segmentation overlay images.
+- `--workers N`: parallel workers for generation/training (also sets `OMP_NUM_THREADS`).
+
+## Convenience script
+
+`start.sh` runs the full curriculum inside `nix develop .#rocm` with auto-resume:
+
+```bash
+./start.sh
+```
+
+After training, view MLflow UI:
+
+```bash
+mlflow ui --backend-store-uri file:curriculum-run/mlruns
+```
