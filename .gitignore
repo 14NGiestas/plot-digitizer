@@ -50,3 +50,9 @@ htmlcov/
 *.pyo
 *.pyd
 .Python
+
+# ARtifacts
+*.png
+*.jpg
+.direnv/
+*.pt
