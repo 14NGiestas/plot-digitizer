@@ -62,8 +62,8 @@ class AxisCalibration:
             raise ValueError("X-axis calibration pixel bounds are invalid (right must be greater than left).")
         if y_span <= 0:
             raise ValueError("Y-axis calibration pixel bounds are invalid (bottom must be greater than top).")
-        x_norm = np.clip((x_px - x_left) / x_span, 0.0, 1.0)
-        y_norm = np.clip((y_bottom - y_px) / y_span, 0.0, 1.0)
+        x_norm = (x_px - x_left) / x_span
+        y_norm = (y_bottom - y_px) / y_span
         if self.invert_y:
             y_norm = 1.0 - y_norm
         x_real = _norm_to_scale(x_norm, self.x_min, self.x_max, self.x_scale)
